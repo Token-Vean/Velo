@@ -1,0 +1,363 @@
+"""Aplicación web local de Velo."""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+import re
+import shutil
+import uuid
+
+from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
+from werkzeug.utils import secure_filename
+
+from velo_engine.detector import build_envelope, detect, spacy_status
+from velo_engine.reader import read_file, supported_extensions
+from velo_engine.visual import (
+    apply_redactions_to_original,
+    export_visual_redacted_pdf,
+    load_applied_metadata,
+    read_pdf_for_visual_review,
+    visual_capabilities,
+)
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(os.path.dirname(__file__), "templates"),
+    static_folder=os.path.join(os.path.dirname(__file__), "static"),
+)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+ALLOWED_EXTENSIONS = {".txt", ".docx", ".pdf"}
+MAX_TEXT_LENGTH = 500_000
+APP_VERSION = "0.2.5"
+
+
+def _allowed_file(filename: str) -> bool:
+    return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
+
+
+def _sanitize_id(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_\-]", "", value or "")[:64]
+
+
+def _workspace_dir() -> str:
+    workspace = app.config.get("WORKSPACE", os.path.join(os.path.dirname(__file__), "..", "workspace"))
+    workspace = os.path.abspath(workspace)
+    os.makedirs(workspace, exist_ok=True)
+    return workspace
+
+
+def _sessions_root() -> str:
+    root = os.path.join(_workspace_dir(), "sessions")
+    os.makedirs(root, exist_ok=True)
+    return root
+
+
+def _session_dir(session_id: str) -> str:
+    safe_id = _sanitize_id(session_id)
+    if not safe_id:
+        raise ValueError("session_id inválido")
+    directory = os.path.abspath(os.path.join(_sessions_root(), safe_id))
+    if not directory.startswith(_sessions_root()):
+        raise ValueError("Ruta de sesión inválida")
+    os.makedirs(directory, exist_ok=True)
+    return directory
+
+
+def _cleanup_session(session_id: str | None) -> None:
+    if not session_id:
+        return
+    safe_id = _sanitize_id(session_id)
+    if not safe_id:
+        return
+    path = os.path.abspath(os.path.join(_sessions_root(), safe_id))
+    if path.startswith(_sessions_root()) and os.path.isdir(path):
+        shutil.rmtree(path, ignore_errors=True)
+
+
+@app.route("/")
+def index():
+    return render_template("index.html", formats=supported_extensions(), app_version=APP_VERSION)
+
+
+@app.route("/api/analyze/text", methods=["POST"])
+def analyze_text():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Petición inválida."}), 400
+
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"error": "No se ha proporcionado texto."}), 400
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify({"error": f"Texto demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
+
+    result = detect(text)
+    return jsonify(
+        {
+            "success": True,
+            "text": text,
+            "format": "txt",
+            "visual_available": False,
+            "visual_reason": "La revisión visual solo está disponible para PDF.",
+            **result,
+        }
+    )
+
+
+@app.route("/api/analyze/file", methods=["POST"])
+def analyze_file():
+    if "file" not in request.files:
+        return jsonify({"error": "No se ha enviado ningún fichero."}), 400
+
+    file = request.files["file"]
+    if not file or file.filename == "":
+        return jsonify({"error": "Nombre de fichero vacío."}), 400
+    if not _allowed_file(file.filename):
+        return jsonify({"error": "Formato no permitido. Use TXT, DOCX o PDF."}), 400
+
+    original_name = secure_filename(file.filename) or "document"
+    ext = os.path.splitext(original_name)[1].lower()
+
+    visual_caps = visual_capabilities()
+
+    if ext == ".pdf" and visual_caps.get("fitz") and visual_caps.get("pillow"):
+        session_id = uuid.uuid4().hex[:16]
+        session_dir = _session_dir(session_id)
+        pdf_path = os.path.join(session_dir, "original.pdf")
+        file.save(pdf_path)
+
+        try:
+            text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
+        except Exception as exc:  # pragma: no cover - safeguard
+            _cleanup_session(session_id)
+            return jsonify({"error": f"Error al preparar la revisión visual del PDF: {exc}"}), 400
+
+        if error:
+            _cleanup_session(session_id)
+            return jsonify({"error": error}), 400
+        if not text:
+            _cleanup_session(session_id)
+            return jsonify({"error": "No se pudo extraer texto del PDF."}), 400
+        if len(text) > MAX_TEXT_LENGTH:
+            _cleanup_session(session_id)
+            return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
+
+        result = detect(text)
+        return jsonify(
+            {
+                "success": True,
+                "filename": file.filename,
+                "format": fmt,
+                "text": text,
+                "visual_available": True,
+                "visual_session": session_id,
+                "visual_pages": visual_meta["pages"],
+                "visual_mode": visual_meta["mode"],
+                "visual_ocr_used": visual_meta["ocr_used"],
+                **result,
+            }
+        )
+
+    workspace = _workspace_dir()
+    safe_name = f"{uuid.uuid4().hex[:12]}{ext}"
+    filepath = os.path.join(workspace, safe_name)
+    file.save(filepath)
+
+    try:
+        text, fmt, error = read_file(filepath)
+    finally:
+        try:
+            os.remove(filepath)
+        except OSError:
+            pass
+
+    if error:
+        return jsonify({"error": error}), 400
+    if not text:
+        return jsonify({"error": "No se pudo extraer texto del fichero."}), 400
+    if len(text) > MAX_TEXT_LENGTH:
+        return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
+
+    result = detect(text)
+    return jsonify(
+        {
+            "success": True,
+            "filename": file.filename,
+            "format": fmt,
+            "text": text,
+            "visual_available": False,
+            "visual_reason": "La revisión visual solo está disponible para PDF.",
+            **result,
+        }
+    )
+
+
+@app.route("/api/export", methods=["POST"])
+def export_envelope():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Petición inválida."}), 400
+
+    raw_id = data.get("document_id", f"DOC-{uuid.uuid4().hex[:8].upper()}")
+    document_id = _sanitize_id(raw_id) or f"DOC-{uuid.uuid4().hex[:8].upper()}"
+    findings = data.get("findings", [])
+    layers_active = data.get("layers_active", ["regex"])
+    layers_available = data.get("layers_available", ["regex"])
+
+    if not isinstance(findings, list):
+        return jsonify({"error": "Formato de hallazgos no válido."}), 400
+
+    envelope = build_envelope(document_id, findings, layers_active, layers_available)
+    workspace = _workspace_dir()
+    export_filename = f"{document_id}_pii_report.json"
+    export_path = os.path.join(workspace, export_filename)
+
+    if not os.path.abspath(export_path).startswith(workspace):
+        return jsonify({"error": "Ruta de exportación no válida."}), 400
+
+    with open(export_path, "w", encoding="utf-8") as f_handle:
+        json.dump(envelope, f_handle, ensure_ascii=False, indent=2)
+
+    return jsonify({"success": True, "envelope": envelope, "saved_as": export_filename})
+
+
+@app.route("/api/session/apply-original", methods=["POST"])
+def apply_original_redactions():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Petición inválida."}), 400
+
+    session_id = _sanitize_id(data.get("session_id"))
+    findings = data.get("findings", [])
+    if not session_id:
+        return jsonify({"error": "No hay sesión visual activa para aplicar la edición sobre el original."}), 400
+    if not isinstance(findings, list):
+        return jsonify({"error": "Formato de hallazgos no válido."}), 400
+
+    session_dir = _session_dir(session_id)
+    try:
+        applied = apply_redactions_to_original(session_dir, session_id, findings)
+    except Exception as exc:
+        return jsonify({"error": f"No se pudo aplicar la edición sobre el original: {exc}"}), 400
+
+    return jsonify({"success": True, "applied": applied})
+
+
+@app.route("/api/session/<session_id>/applied-original-pdf")
+def download_applied_original_pdf(session_id):
+    safe_id = _sanitize_id(session_id)
+    if not safe_id:
+        return jsonify({"error": "Sesión inválida."}), 400
+    session_dir = _session_dir(safe_id)
+    try:
+        applied = load_applied_metadata(session_dir)
+    except Exception:
+        return jsonify({"error": "No existe todavía una versión editada del original en esta sesión."}), 404
+
+    output_path = os.path.join(session_dir, applied.get("pdf_name", "original_redacted.pdf"))
+    if not os.path.exists(output_path):
+        return jsonify({"error": "No existe todavía una versión editada del original en esta sesión."}), 404
+
+    with open(output_path, "rb") as handle:
+        pdf_bytes = handle.read()
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=applied.get("pdf_name", "original_redacted.pdf"),
+    )
+
+
+@app.route("/api/export/redacted-pdf", methods=["POST"])
+def export_redacted_pdf():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({"error": "Petición inválida."}), 400
+
+    session_id = _sanitize_id(data.get("session_id"))
+    findings = data.get("findings", [])
+    document_id = _sanitize_id(data.get("document_id", f"DOC-{uuid.uuid4().hex[:8].upper()}"))
+    if not session_id:
+        return jsonify({"error": "No hay sesión visual activa para exportar el PDF original."}), 400
+    if not isinstance(findings, list):
+        return jsonify({"error": "Formato de hallazgos no válido."}), 400
+
+    session_dir = _session_dir(session_id)
+    output_name = f"{document_id or 'DOC'}_visual_redacted.pdf"
+    output_path = os.path.join(session_dir, output_name)
+
+    try:
+        export_visual_redacted_pdf(session_dir, findings, output_path)
+    except Exception as exc:
+        return jsonify({"error": f"No se pudo exportar el PDF visual: {exc}"}), 400
+
+    with open(output_path, "rb") as handle:
+        pdf_bytes = handle.read()
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=output_name,
+    )
+
+
+@app.route("/api/session/<session_id>/asset/<filename>")
+def serve_session_asset(session_id, filename):
+    safe_id = _sanitize_id(session_id)
+    safe_file = os.path.basename(filename)
+    session_dir = _session_dir(safe_id)
+    assets_dir = os.path.join(session_dir, "assets")
+    return send_from_directory(assets_dir, safe_file)
+
+
+@app.route("/api/session/cleanup", methods=["POST"])
+def cleanup_session():
+    data = request.get_json(silent=True) or {}
+    _cleanup_session(data.get("session_id"))
+    return jsonify({"success": True})
+
+
+@app.route("/api/status")
+def status():
+    spacy = spacy_status()
+    visual = visual_capabilities()
+    layers = {
+        "regex": True,
+        "spacy": spacy["installed"],
+        "spacy_model": spacy["model"],
+    }
+    return jsonify(
+        {
+            "tool": "velo",
+            "version": APP_VERSION,
+            "execution": "local",
+            "layers": layers,
+            "formats": supported_extensions(),
+            "visual_redaction": {
+                "implemented": bool(visual.get("fitz") and visual.get("pillow")),
+                "fitz": visual.get("fitz"),
+                "pillow": visual.get("pillow"),
+                "ocr": visual.get("tesseract_ready"),
+                "note": "La revisión visual de PDF usa la imagen original por página y coordena los tachados con la base textual/OCR de esa misma sesión.",
+            },
+        }
+    )
+
+
+@app.route("/api/shutdown", methods=["POST"])
+def shutdown():
+    import signal
+    import threading
+    import time
+
+    pid = app.config.get("SERVER_PID", os.getpid())
+
+    def _shutdown_later():
+        time.sleep(0.5)
+        os.kill(pid, signal.SIGINT)
+
+    threading.Thread(target=_shutdown_later, daemon=True).start()
+    return jsonify({"success": True, "message": "Apagando Velo..."})

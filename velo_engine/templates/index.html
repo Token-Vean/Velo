@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Velo</title>
+    <style>
+        :root {
+            --bg: #FAF8F6;
+            --surface: #FFFFFF;
+            --surface-alt: #F5F5F4;
+            --code-bg: #1C1917;
+            --primary: #1C1917;
+            --accent: #0F766E;
+            --accent-soft: #CCFBF1;
+            --confirm: #15803D;
+            --confirm-soft: #DCFCE7;
+            --danger: #B91C1C;
+            --danger-soft: #FEF2F2;
+            --warn-soft: #FFFBEB;
+            --border: #D6D3D1;
+            --border-light: #E7E5E4;
+            --text: #1C1917;
+            --text-2: #57534E;
+            --text-3: #A8A29E;
+            --radius: 12px;
+            --shadow-sm: 0 1px 2px rgba(0,0,0,.05);
+            --shadow: 0 6px 18px rgba(0,0,0,.08);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: "Segoe UI", system-ui, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 28px;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
+            position: sticky;
+            top: 0;
+            z-index: 20;
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-title {
+            font-weight: 800;
+            font-size: 20px;
+            letter-spacing: -.02em;
+        }
+        .brand-sub {
+            font-size: 12px;
+            color: var(--text-2);
+        }
+        .header-right {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid #86EFAC;
+            background: #F0FDF4;
+            color: var(--confirm);
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .badge-dot {
+            width: 6px; height: 6px; border-radius: 50%; background: var(--confirm);
+        }
+        .btn {
+            border: 1px solid var(--border);
+            background: var(--surface);
+            color: var(--text);
+            padding: 10px 16px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: var(--shadow-sm);
+        }
+        .btn:hover { box-shadow: var(--shadow); }
+        .btn:disabled { opacity: .45; cursor: default; box-shadow: none; }
+        .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+        .btn-accent { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .btn-danger { color: var(--danger); }
+        .btn-sm { padding: 6px 10px; font-size: 12px; box-shadow: none; }
+        .steps {
+            display: flex;
+            gap: 4px;
+            padding: 0 24px;
+            background: var(--surface);
+            border-bottom: 1px solid var(--border-light);
+        }
+        .step-tab {
+            padding: 14px 16px;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            background: transparent;
+            color: var(--text-3);
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .step-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .step-tab.is-disabled { opacity: .45; }
+        .step-tab .step-note { font-size: 11px; color: var(--text-3); margin-left: 4px; }
+        .content {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 28px 24px 110px;
+        }
+        .title { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 0 0 6px; }
+        .desc { margin: 0 0 18px; color: var(--text-2); line-height: 1.55; }
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: var(--radius);
+            padding: 34px;
+            background: var(--surface);
+            text-align: center;
+            cursor: pointer;
+            transition: .15s ease;
+        }
+        .upload-area:hover { border-color: var(--accent); background: #F8FFFD; }
+        .upload-area.has-file { border-style: solid; border-color: #86EFAC; background: #F0FDF4; }
+        .divider {
+            display: flex; align-items: center; gap: 14px;
+            margin: 22px 0 16px; color: var(--text-3); font-size: 12px; text-transform: uppercase; font-weight: 700;
+        }
+        .divider::before, .divider::after { content: ""; flex: 1; border-top: 1px solid var(--border-light); }
+        textarea {
+            width: 100%; min-height: 240px; resize: vertical;
+            border: 1px solid var(--border); border-radius: var(--radius);
+            padding: 16px; background: var(--surface);
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 13px; line-height: 1.7;
+        }
+        .review-layout {
+            display: grid;
+            grid-template-columns: minmax(0,1fr) 360px;
+            gap: 24px;
+        }
+        .panel, .info-box, .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+        }
+        .panel { padding: 18px; }
+        .panel-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .panel-title { font-size: 15px; font-weight: 800; }
+        .doc-view {
+            max-height: 620px;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 13px;
+            line-height: 1.85;
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            padding: 16px;
+            background: #FFFEFD;
+        }
+        mark.pii-mark { padding: 1px 3px; border-radius: 4px; }
+        .findings-list { display: flex; flex-direction: column; gap: 8px; max-height: 620px; overflow: auto; }
+        .finding-card { padding: 12px; border: 1px solid var(--border-light); border-radius: 10px; background: var(--surface); }
+        .finding-card.discarded { opacity: .42; }
+        .finding-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 6px; }
+        .finding-badge { padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 800; text-transform: uppercase; }
+        .finding-id, .finding-status { font-size: 11px; color: var(--text-3); font-weight: 700; }
+        .finding-text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13px; font-weight: 700; margin: 4px 0 10px; }
+        .finding-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+        .finding-card select { margin-top: 8px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border); }
+        .stat-cards { display: flex; gap: 14px; flex-wrap: wrap; margin: 16px 0; }
+        .stat-card { padding: 18px 20px; min-width: 150px; flex: 1; }
+        .stat-card .num { font-size: 28px; font-weight: 800; }
+        .stat-card .lbl { font-size: 12px; color: var(--text-2); margin-top: 4px; font-weight: 600; }
+        .info-box { padding: 14px 16px; line-height: 1.55; font-size: 13px; color: var(--text-2); margin-bottom: 12px; }
+        .warn { background: var(--warn-soft); }
+        .neutral { background: var(--surface-alt); }
+        .selection-popup {
+            display: none; position: fixed; z-index: 100;
+            min-width: 280px;
+            background: var(--surface);
+            border: 2px solid var(--accent);
+            border-radius: 12px;
+            box-shadow: 0 18px 40px rgba(0,0,0,.15);
+            padding: 14px;
+        }
+        .selection-popup.visible { display: block; }
+        .cat-options { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
+        .cat-opt { padding: 5px 10px; border-radius: 999px; font-size: 11px; font-weight: 800; cursor: pointer; border: 2px solid transparent; }
+        .cat-opt.selected { border-color: var(--text); }
+        .visual-note { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+        .visual-page {
+            margin-bottom: 22px;
+            padding: 14px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow-sm);
+        }
+        .visual-page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 10px; }
+        .visual-stage {
+            position: relative;
+            overflow: auto;
+            border: 1px solid var(--border-light);
+            border-radius: 10px;
+            background: #f3f4f6;
+            padding: 10px;
+        }
+        .page-canvas {
+            position: relative;
+            margin: 0 auto;
+            background: #fff;
+            box-shadow: 0 4px 16px rgba(0,0,0,.08);
+        }
+        .page-canvas img { display: block; width: 100%; height: auto; }
+        .redaction-box {
+            position: absolute;
+            background: rgba(0,0,0,.93);
+            border-radius: 2px;
+        }
+        .footer-nav {
+            position: fixed;
+            left: 0; right: 0; bottom: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 24px;
+            border-top: 1px solid var(--border);
+            background: rgba(255,255,255,.96);
+            backdrop-filter: blur(12px);
+            z-index: 30;
+        }
+        .footer-right { display: flex; gap: 10px; }
+        .json-output {
+            background: var(--code-bg);
+            color: #F5F5F4;
+            border-radius: 12px;
+            padding: 16px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 11px;
+            line-height: 1.65;
+            max-height: 260px;
+            overflow: auto;
+        }
+        .checks { padding: 16px; }
+        .check-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 13px; }
+        .check-row input { margin-top: 2px; accent-color: var(--accent); }
+        .hidden { display: none !important; }
+        @media (max-width: 900px) {
+            .review-layout { grid-template-columns: 1fr; }
+            .header { padding: 16px 18px; }
+            .content { padding: 20px 16px 120px; }
+            .steps { padding: 0 12px; overflow: auto; }
+            .footer-nav { padding: 12px 16px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="brand">
+            <img src="/static/logo.png" alt="Velo" style="height:40px;border-radius:8px;">
+            <div>
+                <div class="brand-title">Velo</div>
+                <div class="brand-sub">detector y testado local de datos sensibles</div>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="badge"><span class="badge-dot"></span><span id="statusLabel">LOCAL</span></div>
+            <button class="btn btn-danger" onclick="shutdownServer()">Apagar</button>
+        </div>
+    </div>
+
+    <div class="steps">
+        <button class="step-tab active" id="tab0">Entrada</button>
+        <button class="step-tab" id="tab1">Análisis</button>
+        <button class="step-tab" id="tab2">Revisión textual</button>
+        <button class="step-tab is-disabled" id="tab3">Vista original PDF <span class="step-note">(solo PDF)</span></button>
+        <button class="step-tab is-disabled" id="tab4">Aplicación sobre el original <span class="step-note">(solo PDF)</span></button>
+        <button class="step-tab" id="tab5">Exportación</button>
+    </div>
+
+    <div class="content" id="step-0">
+        <h1 class="title">Cargar documento</h1>
+        <p class="desc">Suba un fichero o pegue texto. Para PDF, Velo puede añadir una fase visual basada en la imagen original por página y en la misma base textual/OCR usada para detectar los hallazgos.</p>
+        <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+            <div style="font-size:36px;margin-bottom:8px;">&#128196;</div>
+            <div>Arrastre un fichero o <strong>pulse para seleccionar</strong></div>
+            <div style="font-size:12px;color:var(--text-3);margin-top:6px;">TXT · DOCX · PDF</div>
+            <div id="fileName" style="display:none;margin-top:10px;font-weight:700;color:var(--confirm);"></div>
+        </div>
+        <input type="file" id="fileInput" style="display:none" accept=".txt,.docx,.pdf">
+        <div class="divider">o pegue texto</div>
+        <textarea id="textInput" placeholder="Pegue aquí el texto del documento..."></textarea>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;flex-wrap:wrap;">
+            <div id="charCount" style="font-size:12px;color:var(--text-3);"></div>
+            <div style="display:flex;gap:10px;">
+                <button class="btn" onclick="loadSample()">Cargar ejemplo</button>
+                <button class="btn btn-primary" id="btnAnalyze" disabled onclick="analyze()">Analizar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="content hidden" id="step-1">
+        <h2 class="title">Resultado del análisis</h2>
+        <p class="desc" id="analysisSummary"></p>
+        <div class="stat-cards" id="summaryCards"></div>
+        <div class="info-box neutral" id="analysisMeta"></div>
+    </div>
+
+    <div class="content hidden" id="step-2">
+        <div class="info-box warn">Seleccione texto en el documento para marcar manualmente datos sensibles no detectados. Resuelva todos los hallazgos antes de pasar al siguiente paso.</div>
+        <div class="info-box neutral">La técnica elegida se conserva en el informe JSON. En la vista original PDF, todas las correcciones confirmadas se materializan como tachado visual sobre la imagen de la página.</div>
+        <div class="info-box neutral" id="workflowHint" style="margin-top:10px;"></div>
+        <div class="review-layout">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Documento base de revisión</div>
+                    <div style="font-size:12px;color:var(--text-2);" id="reviewCounters"></div>
+                </div>
+                <div class="doc-view" id="docView"></div>
+            </div>
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Hallazgos</div>
+                    <button class="btn btn-sm" onclick="confirmAll()">Confirmar todos</button>
+                </div>
+                <div class="findings-list" id="findingsList"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="content hidden" id="step-3">
+        <h2 class="title">Vista original del PDF</h2>
+        <p class="desc">Esta fase proyecta los hallazgos confirmados sobre la imagen del PDF original. Las cajas negras se calculan con la misma base textual u OCR empleada para el análisis. Es el paso previo obligatorio antes de aplicar la edición sobre el original.</p>
+        <div class="visual-note">
+            <div class="info-box neutral" id="visualModeBox" style="margin:0;flex:1;"></div>
+            <div class="info-box neutral" id="visualHelpBox" style="margin:0;flex:1;"></div>
+        </div>
+        <div id="visualPages"></div>
+    </div>
+
+    <div class="content hidden" id="step-4">
+        <h2 class="title">Aplicación sobre el original</h2>
+        <p class="desc">Este es el quinto paso del proceso para PDF. Aquí Velo genera una copia derivada editada del PDF original, aplicando las redacciones sobre la imagen de cada página a partir de la misma base textual u OCR usada en la detección.</p>
+        <div class="info-box neutral" id="applyOriginalSummary"></div>
+        <div class="info-box neutral" id="applyOriginalStatus" style="margin-top:10px;"></div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:14px 0 10px;">
+            <button class="btn btn-accent" id="btnApplyOriginal" onclick="applyOriginalEdits(this)">Aplicar edición sobre el original</button>
+        </div>
+        <div id="appliedOriginalPages"></div>
+    </div>
+
+    <div class="content hidden" id="step-5">
+        <h2 class="title">Exportación</h2>
+        <p class="desc" id="exportSummary"></p>
+        <div class="stat-cards" id="exportStats"></div>
+        <div class="panel" id="riskAssessment" style="margin-bottom:14px;"></div>
+        <div class="panel checks" style="margin-bottom:14px;">
+            <div style="font-weight:800;margin-bottom:10px;">Verificación antes de exportar</div>
+            <label class="check-row"><input type="checkbox" id="chkPurpose" onchange="checkCompliance()"><span>El tratamiento tiene una finalidad legítima documentada.</span></label>
+            <label class="check-row"><input type="checkbox" id="chkReview" onchange="checkCompliance()"><span>He revisado todos los hallazgos y he validado las correcciones.</span></label>
+            <label class="check-row"><input type="checkbox" id="chkRisk" onchange="checkCompliance()"><span>He valorado el riesgo de reidentificación del resultado visible.</span></label>
+            <div style="font-size:12px;color:var(--text-3);margin-top:8px;">La copia exportada no modifica el original fuente fuera de la sesión. El informe JSON deja traza de revisión. Si se ha aplicado la edición sobre el original, la descarga corresponde a una copia derivada visual del PDF original ya redactada.</div>
+        </div>
+        <div class="json-output" id="jsonOutput"></div>
+        <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:14px;">
+            <button class="btn" onclick="copyJSON(this)">Copiar JSON</button>
+            <button class="btn" id="btnSave" disabled onclick="saveJSON(this)">Guardar informe</button>
+            <button class="btn" id="btnDerivedPdf" disabled onclick="exportDerivedPDF()">Generar copia textual</button>
+            <button class="btn btn-accent hidden" id="btnAppliedPdf" disabled onclick="downloadAppliedOriginal(this)">Descargar original editado</button>
+        </div>
+        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la redacción visual del PDF se aplica en una copia derivada del original y se materializa antes de la exportación final.</div>
+        <div class="info-box neutral" style="margin-top:6px;"><strong>ISO/IEC 20889:</strong> el informe conserva la técnica seleccionada para cada hallazgo, aunque la materialización visual del PDF original se realiza como tachado gráfico.</div>
+    </div>
+
+    <div class="footer-nav hidden" id="footerNav">
+        <button class="btn" onclick="resetAll()">Nuevo análisis</button>
+        <div class="footer-right">
+            <button class="btn" id="btnPrev" onclick="prevStep()">Anterior</button>
+            <button class="btn btn-primary" id="btnNext" onclick="nextStep()">Siguiente</button>
+        </div>
+    </div>
+
+    <div class="selection-popup" id="selectionPopup">
+        <div style="font-size:13px;font-weight:800;margin-bottom:8px;">Marcar como dato sensible</div>
+        <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:700;padding:8px 10px;background:var(--surface-alt);border-radius:8px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="popupSelectedText"></div>
+        <div class="cat-options" id="categoryOptions"></div>
+        <div style="display:flex;gap:8px;">
+            <button class="btn btn-sm btn-accent" onclick="addManualFinding()">Marcar</button>
+            <button class="btn btn-sm" onclick="hidePopup()">Cancelar</button>
+        </div>
+    </div>
+
+<script>
+const CATEGORY_COLORS = { identification: "#DC2626", contact: "#2563EB", financial: "#7C3AED", personal: "#059669", health: "#DB2777" };
+const CATEGORY_LABELS = { identification: "Identificación", contact: "Contacto", financial: "Financiero", personal: "Personal", health: "Salud" };
+
+let currentStep = 0;
+let documentText = "";
+let findings = [];
+let layersActive = [];
+let layersAvailable = [];
+let selectedFile = null;
+let manualSelection = null;
+let manualCategory = "personal";
+let findingCounter = 0;
+let visualSession = null;
+let visualPages = [];
+let visualAvailable = false;
+let visualMode = null;
+let visualOcrUsed = false;
+let currentFormat = "txt";
+let appliedOriginal = null;
+let appliedSignature = null;
+let applyingOriginal = false;
+
+const SAMPLE_TEXT = "EXPEDIENTE DE AYUDA SOCIAL - Nº 2024/1547\n\nSolicitante: María del Carmen Rodríguez López\nDNI: 52846371P\nNIE del cónyuge: X1234567L\nFecha de nacimiento: 15/03/1978\nDomicilio: Calle de la Constitución, nº 42, 3ºB\nCódigo postal: 28045, Madrid\n\nTeléfono de contacto: 654 321 098\nCorreo electrónico: mcarmen.rodriguez@gmail.com\n\nNº de la Seguridad Social: 28/12345678/05\nCuenta bancaria: ES76 2100 0813 61 0123456789\n\nINFORME SOCIAL:\nLa solicitante, nacida el 15/03/1978, acude al servicio derivada por el Centro de Salud de Usera. Refiere situación de desempleo. Su cónyuge, Ahmed Ben Ali (NIE: Y7654321Z), se encuentra en situación de incapacidad temporal.";
+
+function catLabel(cat) { return CATEGORY_LABELS[cat] || cat; }
+
+function setStepLabels() {
+    const tab3 = document.getElementById("tab3");
+    const tab4 = document.getElementById("tab4");
+    const note3 = tab3.querySelector(".step-note");
+    const note4 = tab4.querySelector(".step-note");
+    tab3.classList.toggle("is-disabled", !visualAvailable);
+    tab4.classList.toggle("is-disabled", !visualAvailable);
+    if (note3) note3.textContent = visualAvailable ? "(activo)" : "(solo PDF)";
+    if (note4) note4.textContent = visualAvailable ? "(activo)" : "(solo PDF)";
+}
+
+function updateStepUI() {
+    for (let i = 0; i <= 5; i++) {
+        const tab = document.getElementById("tab" + i);
+        const pane = document.getElementById("step-" + i);
+        tab.classList.toggle("active", i === currentStep);
+        pane.classList.toggle("hidden", i !== currentStep);
+    }
+    document.getElementById("footerNav").classList.toggle("hidden", currentStep === 0);
+    document.getElementById("btnPrev").classList.toggle("hidden", currentStep <= 1);
+
+    const btnNext = document.getElementById("btnNext");
+    if (currentStep === 5) {
+        btnNext.classList.add("hidden");
+        return;
+    }
+    btnNext.classList.remove("hidden");
+    btnNext.disabled = false;
+    if (currentStep === 2) {
+        btnNext.textContent = visualAvailable ? "Siguiente: vista original" : "Ir a exportación";
+        btnNext.disabled = findings.some(f => f.status === "pending");
+    } else if (currentStep === 3) {
+        btnNext.textContent = "Siguiente: aplicar sobre original";
+    } else if (currentStep === 4) {
+        btnNext.textContent = "Ir a exportación";
+        btnNext.disabled = visualAvailable && (!appliedOriginal || applyingOriginal);
+    } else {
+        btnNext.textContent = "Siguiente";
+    }
+}
+
+function goToStep(step) {
+    currentStep = step;
+    updateStepUI();
+    if (step === 1) renderAnalysis();
+    if (step === 2) renderReview();
+    if (step === 3) renderVisualReview();
+    if (step === 4) renderOriginalApplication();
+    if (step === 5) renderExport();
+}
+
+function nextStep() {
+    if (currentStep === 2 && !visualAvailable) {
+        goToStep(5);
+        return;
+    }
+    if (currentStep < 5) goToStep(currentStep + 1);
+}
+
+function prevStep() {
+    if (currentStep === 5 && !visualAvailable) {
+        goToStep(2);
+        return;
+    }
+    if (currentStep > 1) goToStep(currentStep - 1);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement("div");
+    div.textContent = text || "";
+    return div.innerHTML;
+}
+
+async function cleanupVisualSession() {
+    if (!visualSession) return;
+    try {
+        await fetch("/api/session/cleanup", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: visualSession })
+        });
+    } catch (_) {}
+    visualSession = null;
+    visualPages = [];
+    visualAvailable = false;
+    visualMode = null;
+    visualOcrUsed = false;
+    appliedOriginal = null;
+    appliedSignature = null;
+    applyingOriginal = false;
+    setStepLabels();
+}
+
+function onTextChange() {
+    const value = document.getElementById("textInput").value;
+    document.getElementById("charCount").textContent = value ? `${value.length} caracteres` : "";
+    document.getElementById("btnAnalyze").disabled = !value.trim() && !selectedFile;
+}
+
+function onFileSelected() {
+    const input = document.getElementById("fileInput");
+    if (!input.files.length) return;
+    selectedFile = input.files[0];
+    document.getElementById("uploadArea").classList.add("has-file");
+    const fileName = document.getElementById("fileName");
+    fileName.style.display = "block";
+    fileName.textContent = selectedFile.name;
+    document.getElementById("btnAnalyze").disabled = false;
+}
+
+function loadSample() {
+    document.getElementById("textInput").value = SAMPLE_TEXT;
+    selectedFile = null;
+    document.getElementById("fileInput").value = "";
+    document.getElementById("uploadArea").classList.remove("has-file");
+    document.getElementById("fileName").style.display = "none";
+    onTextChange();
+}
+
+async function analyze() {
+    const btn = document.getElementById("btnAnalyze");
+    btn.disabled = true;
+    btn.textContent = "Analizando...";
+
+    await cleanupVisualSession();
+
+    try {
+        let response;
+        if (selectedFile) {
+            const fd = new FormData();
+            fd.append("file", selectedFile);
+            response = await fetch("/api/analyze/file", { method: "POST", body: fd });
+        } else {
+            response = await fetch("/api/analyze/text", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ text: document.getElementById("textInput").value })
+            });
+        }
+        const data = await response.json();
+        if (!response.ok || data.error) throw new Error(data.error || "No se pudo analizar el documento.");
+
+        documentText = data.text;
+        findings = data.findings || [];
+        findingCounter = findings.length;
+        layersActive = data.layers_active || ["regex"];
+        layersAvailable = data.layers_available || ["regex"];
+        currentFormat = data.format || "txt";
+        visualSession = data.visual_session || null;
+        visualPages = data.visual_pages || [];
+        visualAvailable = Boolean(data.visual_available && visualSession && visualPages.length);
+        visualMode = data.visual_mode || null;
+        visualOcrUsed = Boolean(data.visual_ocr_used);
+        appliedOriginal = null;
+        appliedSignature = null;
+        applyingOriginal = false;
+        setStepLabels();
+
+        goToStep(1);
+        setTimeout(() => goToStep(2), 700);
+    } catch (err) {
+        alert("Error: " + err.message);
+    } finally {
+        btn.textContent = "Analizar";
+        btn.disabled = false;
+    }
+}
+
+function renderAnalysis() {
+    const categories = {};
+    findings.forEach(f => {
+        if (!categories[f.category]) categories[f.category] = 0;
+        categories[f.category] += 1;
+    });
+    const categoryCount = Object.keys(categories).length;
+    document.getElementById("analysisSummary").innerHTML = `Se han detectado <strong>${findings.length}</strong> hallazgos en <strong>${categoryCount}</strong> categorías.`;
+    let cards = "";
+    Object.keys(categories).forEach(cat => {
+        const color = CATEGORY_COLORS[cat] || "#6B7280";
+        cards += `<div class="stat-card"><div class="num" style="color:${color}">${categories[cat]}</div><div class="lbl">${catLabel(cat)}</div></div>`;
+    });
+    document.getElementById("summaryCards").innerHTML = cards || `<div class="stat-card"><div class="num">0</div><div class="lbl">Sin hallazgos</div></div>`;
+    let meta = `Formato de trabajo: <strong>${escapeHtml(currentFormat.toUpperCase())}</strong>. Capas activas: <strong>${escapeHtml(layersActive.join(", "))}</strong>.`;
+    if (visualAvailable) {
+        meta += ` Revisión visual disponible para PDF original. Base utilizada: <strong>${escapeHtml(visualMode || "text_layer")}</strong>.`;
+    }
+    document.getElementById("analysisMeta").innerHTML = meta;
+}
+
+function renderHighlightedDoc() {
+    const activeFindings = findings.filter(f => f.status !== "discarded").sort((a, b) => a.position.start - b.position.start);
+    let html = "";
+    let last = 0;
+    for (const finding of activeFindings) {
+        if (finding.position.start > last) html += escapeHtml(documentText.slice(last, finding.position.start));
+        const color = CATEGORY_COLORS[finding.category] || "#6B7280";
+        const opacity = finding.status === "confirmed" ? "35" : "18";
+        html += `<mark class="pii-mark" style="background:${color}${opacity};border-bottom:2px solid ${color};" title="${escapeHtml(finding.label)}">${escapeHtml(documentText.slice(finding.position.start, finding.position.end))}</mark>`;
+        last = finding.position.end;
+    }
+    if (last < documentText.length) html += escapeHtml(documentText.slice(last));
+    document.getElementById("docView").innerHTML = html;
+}
+
+function renderFindingsList() {
+    let html = "";
+    for (const finding of findings) {
+        const color = CATEGORY_COLORS[finding.category] || "#6B7280";
+        const discarded = finding.status === "discarded";
+        const confirmed = finding.status === "confirmed";
+        let actions = "";
+        if (!discarded && !confirmed) {
+            actions = `<button class="btn btn-sm" onclick="setStatus('${finding.id}','confirmed')">Confirmar</button><button class="btn btn-sm" onclick="setStatus('${finding.id}','discarded')">Descartar</button>`;
+        } else if (confirmed) {
+            actions = `<button class="btn btn-sm" onclick="setStatus('${finding.id}','discarded')">Descartar</button>`;
+        } else {
+            actions = `<button class="btn btn-sm" onclick="setStatus('${finding.id}','pending')">Restaurar</button>`;
+        }
+        html += `<div class="finding-card ${discarded ? 'discarded' : ''}">
+            <div class="finding-meta">
+                <span class="finding-badge" style="background:${color}18;color:${color};">${escapeHtml(finding.label)}</span>
+                <span class="finding-id">${escapeHtml(finding.id)}</span>
+                <span class="finding-status">${escapeHtml(finding.status.toUpperCase())}</span>
+                ${finding.method === 'manual' ? '<span class="finding-status" style="color:var(--accent)">MANUAL</span>' : ''}
+            </div>
+            <div class="finding-text">${escapeHtml(finding.text)}</div>
+            <div class="finding-actions">${actions}</div>
+            ${confirmed ? `<select onchange="setTechnique('${finding.id}',this.value)">
+                <option value="suppression" ${finding.technique === 'suppression' ? 'selected' : ''}>Supresión</option>
+                <option value="generalization" ${finding.technique === 'generalization' ? 'selected' : ''}>Generalización</option>
+                <option value="pseudonymization" ${finding.technique === 'pseudonymization' ? 'selected' : ''}>Seudonimización</option>
+            </select>` : ''}
+        </div>`;
+    }
+    document.getElementById("findingsList").innerHTML = html;
+}
+
+function updateReviewStats() {
+    const pending = findings.filter(f => f.status === "pending").length;
+    const confirmed = findings.filter(f => f.status === "confirmed").length;
+    const discarded = findings.filter(f => f.status === "discarded").length;
+    document.getElementById("reviewCounters").innerHTML = `<strong>${pending}</strong> pendientes · <strong>${confirmed}</strong> confirmados · <strong>${discarded}</strong> descartados`;
+    updateStepUI();
+}
+
+function renderReview() {
+    renderHighlightedDoc();
+    renderFindingsList();
+    updateReviewStats();
+    const hint = document.getElementById("workflowHint");
+    if (visualAvailable) {
+        hint.innerHTML = "<strong>Flujo adicional activo:</strong> este PDF dispone del paso 4 «Vista original PDF» y del paso 5 «Aplicación sobre el original» antes de la exportación.";
+    } else if (currentFormat === "pdf") {
+        const reasonText = visualReason ? ` ${escapeHtml(visualReason)}` : "";
+        hint.innerHTML = `<strong>Flujo visual no disponible:</strong> el documento es PDF, pero en esta sesión no se ha podido activar la revisión visual basada en imagen original.${reasonText} La exportación seguirá siendo textual.`;
+    } else {
+        hint.innerHTML = "<strong>Flujo aplicable:</strong> los pasos de vista original y aplicación sobre el original solo se activan cuando el documento de entrada es un PDF y hay revisión visual disponible.";
+    }
+}
+
+function setStatus(id, status) {
+    findings = findings.map(f => {
+        if (f.id !== id) return f;
+        const updated = { ...f, status };
+        if (status === "confirmed" && !updated.technique) updated.technique = "suppression";
+        return updated;
+    });
+    renderReview();
+}
+
+function setTechnique(id, technique) {
+    findings = findings.map(f => f.id === id ? { ...f, technique } : f);
+}
+
+function confirmAll() {
+    findings = findings.map(f => f.status === "pending" ? { ...f, status: "confirmed", technique: f.technique || "suppression" } : f);
+    renderReview();
+}
+
+function getSelectionOffsets(root, range) {
+    const preRange = range.cloneRange();
+    preRange.selectNodeContents(root);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const start = preRange.toString().length;
+    return { start, end: start + range.toString().length };
+}
+
+function onDocSelection() {
+    if (currentStep !== 2) return;
+    const docView = document.getElementById("docView");
+    const selection = window.getSelection();
+    if (!selection || selection.isCollapsed || !selection.rangeCount) return;
+    const range = selection.getRangeAt(0);
+    if (!docView.contains(range.commonAncestorContainer)) return;
+    const selectedText = selection.toString().trim();
+    if (selectedText.length < 2) return;
+    const offsets = getSelectionOffsets(docView, range);
+    const overlaps = findings.some(f => f.status !== "discarded" && !(offsets.end <= f.position.start || offsets.start >= f.position.end));
+    if (overlaps) return;
+    manualSelection = { text: documentText.slice(offsets.start, offsets.end), start: offsets.start, end: offsets.end };
+    document.getElementById("popupSelectedText").textContent = manualSelection.text;
+    let options = "";
+    Object.keys(CATEGORY_COLORS).forEach(cat => {
+        options += `<span class="cat-opt ${cat === manualCategory ? 'selected' : ''}" style="background:${CATEGORY_COLORS[cat]}18;color:${CATEGORY_COLORS[cat]};" onclick="selectCategory('${cat}',this)">${catLabel(cat)}</span>`;
+    });
+    document.getElementById("categoryOptions").innerHTML = options;
+    const popup = document.getElementById("selectionPopup");
+    const rect = range.getBoundingClientRect();
+    popup.style.left = Math.min(rect.left, window.innerWidth - 320) + "px";
+    popup.style.top = (rect.bottom + 8) + "px";
+    popup.classList.add("visible");
+}
+
+function selectCategory(category, element) {
+    manualCategory = category;
+    document.querySelectorAll('.cat-opt').forEach(el => el.classList.remove('selected'));
+    element.classList.add('selected');
+}
+
+function addManualFinding() {
+    if (!manualSelection) return;
+    findingCounter += 1;
+    findings.push({
+        id: "m" + String(findingCounter).padStart(3, "0"),
+        text: manualSelection.text,
+        category: manualCategory,
+        type: "manual_" + manualCategory,
+        label: catLabel(manualCategory),
+        description: "Marcado manual",
+        position: { start: manualSelection.start, end: manualSelection.end },
+        confidence: 1.0,
+        method: "manual",
+        status: "confirmed",
+        technique: "suppression"
+    });
+    findings.sort((a, b) => a.position.start - b.position.start);
+    hidePopup();
+    window.getSelection().removeAllRanges();
+    renderReview();
+}
+
+function hidePopup() {
+    document.getElementById("selectionPopup").classList.remove("visible");
+    manualSelection = null;
+}
+
+function rectanglesForPage(page) {
+    const confirmed = findings.filter(f => f.status === "confirmed");
+    const grouped = {};
+    for (const finding of confirmed) {
+        const overlaps = (page.words || []).filter(word => !(finding.position.end <= word.start || finding.position.start >= word.end));
+        overlaps.forEach(word => {
+            const key = finding.id + "::" + word.line_key;
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(word.bbox);
+        });
+    }
+    return Object.values(grouped).map(boxes => {
+        const x0 = Math.min(...boxes.map(b => b[0])) - 2;
+        const y0 = Math.min(...boxes.map(b => b[1])) - 1;
+        const x1 = Math.max(...boxes.map(b => b[2])) + 2;
+        const y1 = Math.max(...boxes.map(b => b[3])) + 1;
+        return { left: Math.max(0, x0), top: Math.max(0, y0), width: x1 - x0, height: y1 - y0 };
+    });
+}
+
+function renderVisualReview() {
+    if (!visualAvailable) {
+        goToStep(4);
+        return;
+    }
+    document.getElementById("visualModeBox").innerHTML = `<strong>Base de alineación:</strong> ${visualMode === 'ocr' ? 'OCR sobre imagen renderizada' : visualMode === 'hybrid' ? 'Capa de texto + OCR' : 'Capa de texto del PDF'}${visualOcrUsed ? ' (OCR usado en al menos una página)' : ''}.`;
+    document.getElementById("visualHelpBox").innerHTML = `<strong>Qué se ve aquí:</strong> la proyección previa de las máscaras sobre la imagen original. En el siguiente paso se materializa la edición y se genera la copia redactada del original.`;
+    let html = "";
+    for (const page of visualPages) {
+        const rects = rectanglesForPage(page);
+        const overlays = rects.map(rect => `<div class="redaction-box" style="left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px;"></div>`).join("");
+        html += `<div class="visual-page">
+            <div class="visual-page-header">
+                <div><strong>Página ${page.page}</strong></div>
+                <div style="font-size:12px;color:var(--text-2);">Fuente: ${page.source}</div>
+            </div>
+            <div class="visual-stage">
+                <div class="page-canvas" style="width:${page.width}px;">
+                    <img src="${page.image_url}" alt="Página ${page.page}">
+                    ${overlays}
+                </div>
+            </div>
+            <div style="font-size:12px;color:var(--text-2);margin-top:10px;">Máscaras visibles en esta página: <strong>${rects.length}</strong>.</div>
+        </div>`;
+    }
+    document.getElementById("visualPages").innerHTML = html;
+}
+
+function confirmedFindingsSignature() {
+    const confirmed = findings
+        .filter(f => f.status === "confirmed")
+        .map(f => ({ id: f.id, start: f.position.start, end: f.position.end, technique: f.technique || "suppression" }))
+        .sort((a, b) => (a.start - b.start) || a.id.localeCompare(b.id));
+    return JSON.stringify(confirmed);
+}
+
+function renderAppliedOriginalPages() {
+    const container = document.getElementById("appliedOriginalPages");
+    if (!appliedOriginal || !(appliedOriginal.pages || []).length) {
+        container.innerHTML = "";
+        return;
+    }
+    let html = "";
+    for (const page of appliedOriginal.pages) {
+        html += `<div class="visual-page">
+            <div class="visual-page-header">
+                <div><strong>Página ${page.page}</strong></div>
+                <div style="font-size:12px;color:var(--text-2);">Redacciones aplicadas: ${page.rectangles}</div>
+            </div>
+            <div class="visual-stage">
+                <div class="page-canvas" style="width:${page.width}px;">
+                    <img src="${page.image_url}" alt="Página ${page.page} editada">
+                </div>
+            </div>
+        </div>`;
+    }
+    container.innerHTML = html;
+}
+
+function renderOriginalApplication() {
+    if (!visualAvailable) {
+        goToStep(5);
+        return;
+    }
+    const confirmed = findings.filter(f => f.status === "confirmed").length;
+    document.getElementById("applyOriginalSummary").innerHTML = `<strong>Hallazgos confirmados:</strong> ${confirmed}. <strong>Páginas del original:</strong> ${visualPages.length}. <strong>Base de alineación:</strong> ${visualMode === 'ocr' ? 'OCR' : visualMode === 'hybrid' ? 'capa de texto + OCR' : 'capa de texto del PDF'}.`;
+    if (!confirmed) {
+        document.getElementById("applyOriginalStatus").innerHTML = "No hay hallazgos confirmados. Confirme al menos uno para aplicar la edición sobre el original.";
+        document.getElementById("btnApplyOriginal").disabled = true;
+        document.getElementById("appliedOriginalPages").innerHTML = "";
+        appliedOriginal = null;
+        appliedSignature = null;
+        updateStepUI();
+        return;
+    }
+    document.getElementById("btnApplyOriginal").disabled = applyingOriginal;
+    if (appliedOriginal) {
+        document.getElementById("applyOriginalStatus").innerHTML = `La edición ya se ha aplicado sobre una copia derivada del original. Páginas generadas: <strong>${appliedOriginal.page_count}</strong>. Máscaras materializadas: <strong>${appliedOriginal.total_rectangles}</strong>.`;
+        renderAppliedOriginalPages();
+    } else {
+        document.getElementById("applyOriginalStatus").innerHTML = "Todavía no se ha generado la copia redactada del original para esta sesión.";
+        document.getElementById("appliedOriginalPages").innerHTML = "";
+        setTimeout(() => { if (currentStep === 4 && !applyingOriginal) applyOriginalEdits(document.getElementById('btnApplyOriginal')); }, 50);
+    }
+    updateStepUI();
+}
+
+async function applyOriginalEdits(button) {
+    if (!visualAvailable || !visualSession) return;
+    const signature = confirmedFindingsSignature();
+    if (appliedOriginal && appliedSignature === signature) {
+        renderOriginalApplication();
+        return;
+    }
+    applyingOriginal = true;
+    if (button) {
+        button.disabled = true;
+        button.textContent = "Aplicando...";
+    }
+    updateStepUI();
+    try {
+        const response = await fetch("/api/session/apply-original", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ session_id: visualSession, findings })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "No se pudo aplicar la edición sobre el original.");
+        appliedOriginal = data.applied;
+        appliedSignature = signature;
+        renderOriginalApplication();
+    } catch (err) {
+        appliedOriginal = null;
+        appliedSignature = null;
+        document.getElementById("applyOriginalStatus").innerHTML = `<span style="color:var(--danger)">Error:</span> ${escapeHtml(err.message)}`;
+        document.getElementById("appliedOriginalPages").innerHTML = "";
+        updateStepUI();
+    } finally {
+        applyingOriginal = false;
+        if (button) {
+            button.disabled = false;
+            button.textContent = "Aplicar edición sobre el original";
+        }
+        updateStepUI();
+    }
+}
+
+function buildEnvelope() {
+    const now = new Date().toISOString();
+    const confirmed = findings.filter(f => f.status === "confirmed");
+    const discarded = findings.filter(f => f.status === "discarded");
+    return {
+        document_id: "DOC-" + Date.now().toString(36).toUpperCase(),
+        analysis_date: now,
+        tool: "velo",
+        version: "0.2.5",
+        layers_active: layersActive,
+        layers_available: layersAvailable,
+        source_format: currentFormat,
+        visual_review: visualAvailable ? {
+            session_active: true,
+            mode: visualMode,
+            page_count: visualPages.length,
+            based_on_original_pdf_images: true
+        } : {
+            session_active: false,
+            based_on_original_pdf_images: false
+        },
+        original_application: visualAvailable ? {
+            generated: Boolean(appliedOriginal),
+            page_count: appliedOriginal ? appliedOriginal.page_count : 0,
+            total_rectangles: appliedOriginal ? appliedOriginal.total_rectangles : 0,
+            based_on_ocr_or_text_layer: true
+        } : {
+            generated: false,
+            based_on_ocr_or_text_layer: false
+        },
+        normative_framework: {
+            redaction: "ISO/IEC 27038",
+            anonymization_techniques: "ISO/IEC 20889",
+            reidentification_risk: "ISO/IEC 27559",
+            privacy_framework: "ISO/IEC 29100",
+            privacy_management: "ISO/IEC 27701"
+        },
+        findings: confirmed.map(f => ({
+            id: f.id,
+            text: f.text,
+            category: f.category,
+            type: f.type,
+            label: f.label,
+            position: f.position,
+            confidence: f.confidence,
+            method: f.method,
+            human_decision: "confirmed",
+            technique: f.technique || "suppression"
+        })),
+        discarded: discarded.map(f => ({ id: f.id, text: f.text, type: f.type, reason: "false_positive" })),
+        summary: {
+            total_detected: findings.length,
+            confirmed: confirmed.length,
+            discarded: discarded.length,
+            categories_found: [...new Set(confirmed.map(f => f.category))],
+            types_found: [...new Set(confirmed.map(f => f.type))]
+        },
+        audit: {
+            reviewed_by: "archivero",
+            review_date: now.split("T")[0],
+            tool_version: "0.2.5",
+            execution: "local"
+        }
+    };
+}
+
+function assessRisk(confirmed) {
+    let direct = 0;
+    let quasi = 0;
+    confirmed.forEach(f => {
+        if (["dni", "nie", "nss", "email", "iban"].includes(f.type)) direct += 1;
+        if (["person_name", "address", "phone", "date_birth", "postal_code", "location"].includes(f.type)) quasi += 1;
+    });
+    let level = "ALTO";
+    let text = "No se ha confirmado ningún dato sensible. Revise el documento antes de exportar.";
+    let color = "#DC2626";
+    if (confirmed.length >= 3) {
+        level = "BAJO";
+        text = `Se han tratado ${confirmed.length} hallazgos. Verifique que los datos residuales no permitan reidentificación por combinación.`;
+        color = "#15803D";
+    } else if (confirmed.length > 0) {
+        level = "MEDIO";
+        text = "Se han confirmado pocos hallazgos. Revise si quedan datos no marcados, especialmente cuasi-identificadores.";
+        color = "#D97706";
+    }
+    document.getElementById("riskAssessment").innerHTML = `<div style="font-weight:800;margin-bottom:10px;">ISO/IEC 27559 — Riesgo de reidentificación</div>
+        <div style="display:inline-block;padding:4px 12px;border-radius:999px;background:${color}18;color:${color};font-size:11px;font-weight:800;margin-bottom:10px;">${level}</div>
+        <div style="color:var(--text-2);line-height:1.55;">${text}</div>
+        <div style="font-size:12px;color:var(--text-3);margin-top:8px;">Identificadores directos tratados: ${direct} · Cuasi-identificadores tratados: ${quasi}</div>`;
+}
+
+function renderExport() {
+    const confirmed = findings.filter(f => f.status === "confirmed");
+    const discarded = findings.filter(f => f.status === "discarded");
+    document.getElementById("exportSummary").innerHTML = `${confirmed.length} confirmados · ${discarded.length} descartados.${visualAvailable ? (appliedOriginal ? ' La copia editada del original está lista para descarga.' : ' Puede generarse una copia editada del original antes de exportar.') : ''}`;
+    document.getElementById("exportStats").innerHTML = `
+        <div class="stat-card"><div class="num" style="color:var(--confirm)">${confirmed.length}</div><div class="lbl">Confirmados</div></div>
+        <div class="stat-card"><div class="num">${discarded.length}</div><div class="lbl">Descartados</div></div>
+        <div class="stat-card"><div class="num">${[...new Set(confirmed.map(f => f.type))].length}</div><div class="lbl">Tipos</div></div>`;
+    assessRisk(confirmed);
+    document.getElementById("jsonOutput").textContent = JSON.stringify(buildEnvelope(), null, 2);
+    document.getElementById("chkPurpose").checked = false;
+    document.getElementById("chkReview").checked = false;
+    document.getElementById("chkRisk").checked = false;
+    document.getElementById("btnAppliedPdf").classList.toggle("hidden", !visualAvailable);
+    checkCompliance();
+}
+
+function checkCompliance() {
+    const ok = document.getElementById("chkPurpose").checked && document.getElementById("chkReview").checked && document.getElementById("chkRisk").checked;
+    document.getElementById("btnSave").disabled = !ok;
+    document.getElementById("btnDerivedPdf").disabled = !ok;
+    document.getElementById("btnAppliedPdf").disabled = !ok || (visualAvailable && !appliedOriginal);
+}
+
+async function saveJSON(button) {
+    try {
+        const envelope = buildEnvelope();
+        const response = await fetch("/api/export", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                document_id: envelope.document_id,
+                findings: findings,
+                layers_active: layersActive,
+                layers_available: layersAvailable
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || "No se pudo guardar el informe.");
+        const original = button.textContent;
+        button.textContent = "Guardado";
+        setTimeout(() => button.textContent = original, 1400);
+    } catch (err) {
+        alert("Error: " + err.message);
+    }
+}
+
+function copyJSON(button) {
+    navigator.clipboard.writeText(document.getElementById("jsonOutput").textContent).then(() => {
+        const original = button.textContent;
+        button.textContent = "Copiado";
+        setTimeout(() => button.textContent = original, 1200);
+    });
+}
+
+const pseudoMap = {};
+function replacementFor(finding) {
+    const technique = finding.technique || "suppression";
+    if (technique === "suppression") return "[DATO SUPRIMIDO]";
+    if (technique === "generalization") {
+        const labels = { person_name: "[PERSONA]", dni: "[DOC. ID]", nie: "[DOC. ID]", phone: "[TEL]", email: "[EMAIL]", iban: "[IBAN]", address: "[DIRECCIÓN]", date_birth: "[FECHA NAC.]" };
+        return labels[finding.type] || `[${finding.label.toUpperCase()}]`;
+    }
+    const key = finding.type + "::" + finding.text;
+    if (!pseudoMap[key]) pseudoMap[key] = `${finding.label} ${Object.keys(pseudoMap).length + 1}`;
+    return pseudoMap[key];
+}
+
+function exportDerivedPDF() {
+    Object.keys(pseudoMap).forEach(k => delete pseudoMap[k]);
+    const confirmed = findings.filter(f => f.status === "confirmed").sort((a,b) => a.position.start - b.position.start);
+    let html = "";
+    let last = 0;
+    confirmed.forEach(f => {
+        if (f.position.start > last) html += escapeHtml(documentText.slice(last, f.position.start));
+        html += `<span style="background:#000;color:#fff;padding:1px 6px;border-radius:2px;font-size:11px;font-weight:700;">${escapeHtml(replacementFor(f))}</span>`;
+        last = f.position.end;
+    });
+    if (last < documentText.length) html += escapeHtml(documentText.slice(last));
+    const win = window.open("", "_blank");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Documento testado</title><style>body{font-family:Courier New,monospace;font-size:12px;line-height:1.8;max-width:820px;margin:40px auto;padding:20px;color:#000}.doc{white-space:pre-wrap;word-break:break-word}.hdr,.ftr{font-family:Arial,sans-serif;font-size:11px;color:#666}.hdr{border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px}.ftr{border-top:1px solid #ccc;padding-top:12px;margin-top:24px}@media print{.np{display:none}}</style></head><body><div class="hdr"><h2>DOCUMENTO TESTADO</h2><div>Velo v0.2.5</div><div>Copia derivada con sustituciones textuales</div></div><div class="doc">${html}</div><div class="ftr">El original no se ha modificado. Esta salida textual es una copia derivada.</div><div class="np" style="text-align:center;margin-top:24px;"><button onclick="window.print()" style="padding:10px 24px;border:0;border-radius:8px;background:#1c1917;color:#fff;cursor:pointer;">Imprimir / Guardar como PDF</button></div></body></html>`);
+    win.document.close();
+}
+
+async function downloadAppliedOriginal(button) {
+    if (!visualSession) return;
+    if (!appliedOriginal) {
+        alert("Primero hay que aplicar la edición sobre el original.");
+        return;
+    }
+    try {
+        const response = await fetch(`/api/session/${visualSession}/applied-original-pdf`);
+        if (!response.ok) {
+            let message = "No se pudo descargar el original editado.";
+            try {
+                const data = await response.json();
+                if (data.error) message = data.error;
+            } catch (_) {}
+            throw new Error(message);
+        }
+        const blob = await response.blob();
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `DOC-${Date.now().toString(36).toUpperCase()}_original_editado.pdf`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        const original = button.textContent;
+        button.textContent = "Descargado";
+        setTimeout(() => button.textContent = original, 1400);
+    } catch (err) {
+        alert("Error: " + err.message);
+    }
+}
+
+async function resetAll() {
+    await cleanupVisualSession();
+    currentStep = 0;
+    documentText = "";
+    findings = [];
+    layersActive = [];
+    layersAvailable = [];
+    selectedFile = null;
+    manualSelection = null;
+    findingCounter = 0;
+    currentFormat = "txt";
+    appliedOriginal = null;
+    appliedSignature = null;
+    applyingOriginal = false;
+    document.getElementById("textInput").value = "";
+    document.getElementById("fileInput").value = "";
+    document.getElementById("uploadArea").classList.remove("has-file");
+    document.getElementById("fileName").style.display = "none";
+    document.getElementById("summaryCards").innerHTML = "";
+    document.getElementById("findingsList").innerHTML = "";
+    document.getElementById("docView").innerHTML = "";
+    document.getElementById("visualPages").innerHTML = "";
+    document.getElementById("appliedOriginalPages").innerHTML = "";
+    document.getElementById("applyOriginalSummary").innerHTML = "";
+    document.getElementById("applyOriginalStatus").innerHTML = "";
+    document.getElementById("jsonOutput").textContent = "";
+    setStepLabels();
+    onTextChange();
+    goToStep(0);
+}
+
+function shutdownServer() {
+    if (!confirm("Se va a apagar Velo. Los datos no guardados se perderán.\n\n¿Desea continuar?")) return;
+    fetch("/api/shutdown", { method: "POST" }).finally(() => {
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Segoe UI,system-ui,sans-serif;"><div><h2>Velo se ha apagado</h2><p style="color:#57534E">Puede cerrar esta ventana.</p></div></div>';
+    });
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    document.getElementById("textInput").addEventListener("input", onTextChange);
+    document.getElementById("fileInput").addEventListener("change", onFileSelected);
+    const uploadArea = document.getElementById("uploadArea");
+    uploadArea.addEventListener("dragover", event => { event.preventDefault(); uploadArea.style.borderColor = "var(--accent)"; });
+    uploadArea.addEventListener("dragleave", () => { uploadArea.style.borderColor = ""; });
+    uploadArea.addEventListener("drop", event => {
+        event.preventDefault();
+        uploadArea.style.borderColor = "";
+        if (event.dataTransfer.files.length) {
+            document.getElementById("fileInput").files = event.dataTransfer.files;
+            onFileSelected();
+        }
+    });
+    document.addEventListener("mouseup", onDocSelection);
+    document.addEventListener("click", event => {
+        const popup = document.getElementById("selectionPopup");
+        if (!popup.contains(event.target) && !event.target.closest(".doc-view")) hidePopup();
+    });
+    fetch("/api/status")
+        .then(r => r.json())
+        .then(d => {
+            let label = "LOCAL";
+            if (d.layers && d.layers.spacy && d.layers.spacy_model) label += " + NER";
+            if (d.visual_redaction && d.visual_redaction.implemented) label += " + PDF";
+            document.getElementById("statusLabel").textContent = label;
+        })
+        .catch(() => {});
+    setStepLabels();
+    updateStepUI();
+});
+</script>
+</body>
+</html>
