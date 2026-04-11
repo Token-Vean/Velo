@@ -1,6 +1,6 @@
 # Velo
 
-Herramienta local para archiveros y profesionales de la gestión documental orientada a detectar, revisar y redactar datos sensibles en documentos. Velo **asiste** al proceso, pero **no sustituye la decisión profesional**: cada hallazgo debe ser confirmado o descartado por la persona revisora.
+Herramienta local para archiveros y profesionales de la gestión documental orientada a detectar, revisar y anonimizar datos sensibles en documentos. Velo **asiste** al proceso, pero **no sustituye la decisión profesional**: cada hallazgo debe ser confirmado o descartado por la persona revisora.
 
 ## Estado del proyecto
 
