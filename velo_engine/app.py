@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 
 from velo_engine.detector import build_envelope, detect, spacy_status
 from velo_engine.reader import read_file, supported_extensions
+from velo_engine.security import init_security, log_audit, hash_text, MAX_PDF_PAGES
 from velo_engine.visual import (
     apply_redactions_to_original,
     export_visual_redacted_pdf,
@@ -28,6 +29,9 @@ app = Flask(
     static_folder=os.path.join(os.path.dirname(__file__), "static"),
 )
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+# Seguridad
+init_security(app)
 
 ALLOWED_EXTENSIONS = {".txt", ".docx", ".pdf"}
 MAX_TEXT_LENGTH = 500_000
@@ -94,6 +98,7 @@ def analyze_text():
     if len(text) > MAX_TEXT_LENGTH:
         return jsonify({"error": f"Texto demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
 
+    log_audit("analyze_text", f"HASH={hash_text(text)} LEN={len(text)}")
     result = detect(text)
     return jsonify(
         {
@@ -133,7 +138,7 @@ def analyze_file():
             text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
         except Exception as exc:  # pragma: no cover - safeguard
             _cleanup_session(session_id)
-            return jsonify({"error": f"Error al preparar la revisión visual del PDF: {exc}"}), 400
+            return jsonify({"error": "Error al preparar la revisión visual del PDF."}), 400
 
         if error:
             _cleanup_session(session_id)
@@ -181,6 +186,7 @@ def analyze_file():
     if len(text) > MAX_TEXT_LENGTH:
         return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
 
+    log_audit("analyze_file", f"FILE={original_name} HASH={hash_text(text)}")
     result = detect(text)
     return jsonify(
         {
@@ -210,6 +216,7 @@ def export_envelope():
     if not isinstance(findings, list):
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
+    log_audit("export", f"DOC={document_id} FINDINGS={len(findings)}")
     envelope = build_envelope(document_id, findings, layers_active, layers_available)
     workspace = _workspace_dir()
     export_filename = f"{document_id}_pii_report.json"
@@ -221,7 +228,7 @@ def export_envelope():
     with open(export_path, "w", encoding="utf-8") as f_handle:
         json.dump(envelope, f_handle, ensure_ascii=False, indent=2)
 
-    return jsonify({"success": True, "envelope": envelope, "saved_as": export_filename})
+    return jsonify({"success": True, "envelope": envelope})
 
 
 @app.route("/api/session/apply-original", methods=["POST"])
@@ -241,7 +248,7 @@ def apply_original_redactions():
     try:
         applied = apply_redactions_to_original(session_dir, session_id, findings)
     except Exception as exc:
-        return jsonify({"error": f"No se pudo aplicar la edición sobre el original: {exc}"}), 400
+        return jsonify({"error": "No se pudo aplicar la edición sobre el original."}), 400
 
     return jsonify({"success": True, "applied": applied})
 
@@ -292,7 +299,7 @@ def export_redacted_pdf():
     try:
         export_visual_redacted_pdf(session_dir, findings, output_path)
     except Exception as exc:
-        return jsonify({"error": f"No se pudo exportar el PDF visual: {exc}"}), 400
+        return jsonify({"error": "No se pudo exportar el PDF visual."}), 400
 
     with open(output_path, "rb") as handle:
         pdf_bytes = handle.read()
@@ -310,6 +317,9 @@ def serve_session_asset(session_id, filename):
     safe_file = os.path.basename(filename)
     session_dir = _session_dir(safe_id)
     assets_dir = os.path.join(session_dir, "assets")
+    # Solo servir imagenes PNG
+    if not safe_file.endswith(".png"):
+        return jsonify({"error": "Tipo de asset no permitido."}), 403
     return send_from_directory(assets_dir, safe_file)
 
 
@@ -355,7 +365,19 @@ def shutdown():
 
     pid = app.config.get("SERVER_PID", os.getpid())
 
+    log_audit("shutdown")
+
     def _shutdown_later():
+        # Limpiar sesiones temporales
+        try:
+            sessions_root = _sessions_root()
+            import shutil
+            for name in os.listdir(sessions_root):
+                path = os.path.join(sessions_root, name)
+                if os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
         time.sleep(0.5)
         os.kill(pid, signal.SIGINT)
 

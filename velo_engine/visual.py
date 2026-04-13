@@ -14,6 +14,15 @@ import os
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 
+# Proteccion contra bombas de descompresion
+try:
+    from PIL import Image as _PilImage
+    _PilImage.MAX_IMAGE_PIXELS = 25_000_000  # ~5000x5000
+except ImportError:
+    pass
+
+MAX_PDF_PAGES_VISUAL = 100
+
 
 TEXT_RENDER_SCALE = 2.0
 SESSION_METADATA = "visual.json"
@@ -178,6 +187,9 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
 
     assets_dir = _ensure_dirs(session_dir)
     document = fitz.open(filepath)
+    if document.page_count > MAX_PDF_PAGES_VISUAL:
+        document.close()
+        return None, "pdf", f"PDF con {document.page_count} paginas. Maximo: {MAX_PDF_PAGES_VISUAL}.", None
     pages = []
     parts: List[str] = []
     global_offset = 0

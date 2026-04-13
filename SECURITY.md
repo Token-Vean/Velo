@@ -49,3 +49,8 @@ Antes de activar OCR en entornos institucionales conviene validar:
 4. Añadir auditoría institucional si el proyecto se incorpora a un flujo formal de acceso o transparencia.
 
 
+
+## Auditoría
+
+Consulte [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) para el informe completo de la última auditoría de seguridad.
+

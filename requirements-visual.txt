@@ -1,4 +1,4 @@
 # Velo - Dependencias visuales opcionales
-PyMuPDF>=1.24,<2.0
-Pillow>=10.0,<12.0
-pytesseract>=0.3.10,<0.4.0
+PyMuPDF==1.25.3
+Pillow==11.1.0
+pytesseract==0.3.13

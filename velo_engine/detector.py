@@ -61,7 +61,7 @@ PATTERNS = [
         "label": "Tarjeta",
         "category": "financial",
         "description": "Número de tarjeta de crédito/débito",
-        "regex": r"\b(?:\d[ -]?){13,19}\b",
+        "regex": r"\b\d{4}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{1,7}\b",
         "flags": 0,
     },
     {
@@ -273,7 +273,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         "document_id": document_id,
         "analysis_date": now,
         "tool": "velo",
-        "version": "0.1.1",
+        "version": "0.2.5",
         "method": "regex+ner" if "spacy_ner" in layers_active else "regex",
         "layers_active": layers_active,
         "layers_available": layers_available,
@@ -314,7 +314,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         "audit": {
             "reviewed_by": "archivero",
             "review_date": now.split("T")[0],
-            "tool_version": "0.1.1",
+            "tool_version": "0.2.5",
             "execution": "local",
             "standards_applied": ["ISO/IEC 27038", "ISO/IEC 20889", "ISO/IEC 27559", "ISO/IEC 29100"],
         },
