@@ -252,10 +252,12 @@ def _map_words_to_canonical(
     """Asigna a cada palabra su posicion (start/end) dentro del texto canonico.
 
     Recorre las palabras en orden y busca cada una secuencialmente en el
-    texto canonico. Si una palabra no se encuentra con busqueda exacta,
-    se intenta con normalizacion (minusculas). Las palabras que no se
-    puedan localizar se descartan del mapa (no tendran cobertura de
-    redaccion, pero es mas seguro que un mapeo erroneo).
+    texto canonico.  Aplica la misma normalizacion Unicode al texto de cada
+    palabra que se aplico al texto canonico para evitar desajustes por NFC,
+    caracteres de control, o espacios Unicode exoticos.
+
+    Retorna la lista de palabras mapeadas.  Si el ratio de exito es bajo
+    la funcion que llama debera usar el fallback de reconstruccion.
     """
     mapped: List[dict] = []
     scan_pos = 0  # cursor dentro de canonical_text
@@ -263,21 +265,43 @@ def _map_words_to_canonical(
     canonical_lower = canonical_text.lower()
 
     for word in words:
-        w_text = word["text"]
+        # Normalizar texto de la palabra igual que el canonico
+        w_text = _clean_extracted_text(word["text"])
+        if not w_text.strip():
+            continue
 
-        # Busqueda exacta hacia adelante
+        # 1. Busqueda exacta hacia adelante
         pos = canonical_text.find(w_text, scan_pos)
 
-        # Fallback: busqueda case-insensitive
+        # 2. Fallback: case-insensitive
         if pos == -1:
             pos = canonical_lower.find(w_text.lower(), scan_pos)
 
+        # 3. Fallback: busqueda desde el inicio (por si el orden difiere)
+        if pos == -1 and scan_pos > 0:
+            pos = canonical_text.find(w_text, 0)
+            if pos != -1 and pos < scan_pos:
+                # Encontrada antes del cursor: aceptar sin avanzar cursor
+                start = global_offset + pos
+                end = start + len(w_text)
+                mapped.append(
+                    {
+                        "text": w_text,
+                        "bbox": word["bbox"],
+                        "start": start,
+                        "end": end,
+                        "line_key": word["line_key"],
+                        "page": page_number,
+                        "source": word["source"],
+                    }
+                )
+                # NO avanzar scan_pos — fue un match fuera de orden
+                continue
+
         if pos == -1:
-            # Palabra no localizable en el texto canonico.
-            # Puede ocurrir por ligaduras, guiones de particion, etc.
             logger.debug(
-                "Palabra no mapeada al texto canonico: %r (scan_pos=%d/%d)",
-                w_text, scan_pos, len(canonical_text),
+                "Pag %d: palabra no mapeada: %r (scan_pos=%d/%d)",
+                page_number, w_text[:30], scan_pos, len(canonical_text),
             )
             continue
 
@@ -404,28 +428,42 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
             canonical = _clean_extracted_text(page.get_text("text") or "")
             canonical = canonical.strip()
 
+            use_canonical = False
+
             if canonical:
-                # Ruta principal: texto canonico + mapeo de bboxes
-                mapped_words = _map_words_to_canonical(
+                # Intentar ruta principal: texto canonico + mapeo de bboxes
+                trial_mapped = _map_words_to_canonical(
                     page_words_raw, canonical, global_offset, page_index + 1,
                 )
-                page_text = canonical
-                global_offset += len(canonical)
-                unmapped = len(page_words_raw) - len(mapped_words)
-                if unmapped > 0:
-                    logger.info(
-                        "Pagina %d: %d/%d palabras mapeadas al texto canonico "
-                        "(%d sin mapear)",
-                        page_index + 1, len(mapped_words),
-                        len(page_words_raw), unmapped,
+                map_ratio = len(trial_mapped) / len(page_words_raw) if page_words_raw else 0
+
+                if map_ratio >= 0.50:
+                    # Mapeo aceptable: usar texto canonico
+                    use_canonical = True
+                    mapped_words = trial_mapped
+                    page_text = canonical
+                    global_offset += len(canonical)
+
+                    unmapped = len(page_words_raw) - len(mapped_words)
+                    if unmapped > 0:
+                        logger.info(
+                            "Pagina %d: %d/%d palabras mapeadas al texto canonico "
+                            "(%d sin mapear, ratio=%.0f%%)",
+                            page_index + 1, len(mapped_words),
+                            len(page_words_raw), unmapped, map_ratio * 100,
+                        )
+                else:
+                    # Mapeo insuficiente: fallback a reconstruccion por palabras
+                    logger.warning(
+                        "Pagina %d: mapeo canonico insuficiente (%d/%d = %.0f%%). "
+                        "Usando reconstruccion por palabras para garantizar "
+                        "cobertura de redaccion.",
+                        page_index + 1, len(trial_mapped),
+                        len(page_words_raw), map_ratio * 100,
                     )
-            else:
-                # Fallback raro: hay palabras pero get_text("text") vacio
-                logger.warning(
-                    "Pagina %d: get_text('words') devolvio datos pero "
-                    "get_text('text') esta vacio; reconstruyendo desde palabras",
-                    page_index + 1,
-                )
+
+            if not use_canonical:
+                # Reconstruir texto desde palabras (fallback seguro)
                 page_text, mapped_words, global_offset = _page_text_and_map(
                     page_words_raw, global_offset, page_index + 1,
                 )
