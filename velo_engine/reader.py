@@ -66,7 +66,6 @@ def _read_pdf(filepath):
     """Intenta extraer texto con PyMuPDF; si no esta disponible, usa PyPDF2."""
     text, fmt, error = _read_pdf_fitz(filepath)
     if error and "instale" in (error or "").lower():
-        # fitz no disponible -> intentar PyPDF2
         logger.info("PyMuPDF no disponible, intentando PyPDF2 como fallback")
         return _read_pdf_pypdf2(filepath)
     return text, fmt, error
@@ -86,8 +85,6 @@ def _read_pdf_fitz(filepath):
         document = fitz.open(filepath)
         pages_text = []
         for page in document:
-            # get_text("text") conserva el flujo natural del texto,
-            # incluyendo saltos de linea y espaciado originales.
             page_text = (page.get_text("text") or "").strip()
             if page_text:
                 pages_text.append(page_text)
@@ -148,7 +145,6 @@ def supported_extensions():
     except ImportError:
         formats.append({"ext": ".docx", "label": "Word DOCX (instale python-docx)", "available": False})
 
-    # Comprobar el mejor motor PDF disponible
     pdf_available = False
     pdf_label = "PDF"
     try:

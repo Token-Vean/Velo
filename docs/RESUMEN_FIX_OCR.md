@@ -1,71 +1,52 @@
-# Velo — Fix OCR Text Extraction (v0.3.1)
+# Velo — Fix OCR + Doble Extracción (v0.3.1)
 
 ## Problema reportado
 
 Un usuario reporta que un PDF con capa OCR correcta produce texto con muchos errores al ser procesado por Velo.
 
-## Causa raíz
-
-### Problema 1: `reader.py` usa PyPDF2 (baja calidad con OCR)
-
-El flujo en `app.py` (línea 152) se bifurca:
-
-- **Con fitz+Pillow instalados** → ruta visual (`visual.py`, PyMuPDF) — buena calidad
-- **Sin ellos** → fallback (`reader.py`, PyPDF2) — calidad muy pobre
-
-`PyPDF2.PdfReader.extract_text()` es conocido por producir texto defectuoso con PDFs que tienen capa OCR: caracteres perdidos, palabras fusionadas, codificaciones rotas, reordenación errónea de glifos.
-
-Como `requirements-visual.txt` es **opcional**, cualquier usuario que instale solo las dependencias base está en la ruta de baja calidad.
-
-### Problema 2: `visual.py` no detecta capas OCR carácter-por-carácter
-
-Ciertos motores OCR (ABBYY, Tesseract antiguo, herramientas propietarias) escriben la capa de texto **un carácter por posición**. `page.get_text("words")` de PyMuPDF devuelve cada carácter como una "palabra" independiente. La reconstrucción con `_page_text_and_map()` los une con espacios, produciendo texto tipo:
-
-```
-E s t e   e s   u n   t e x t o   d e   e j e m p l o
-```
-
 ## Cambios aplicados
 
-### `reader.py`
+### 1. `reader.py` — PyMuPDF como motor primario
 
-- **Motor primario**: ahora usa `fitz.open()` + `page.get_text("text")` de PyMuPDF, que preserva el flujo natural del texto incluyendo saltos de línea y espaciado originales.
-- **Fallback**: PyPDF2 solo se activa si PyMuPDF no está instalado, con un warning en log indicando la calidad limitada.
-- **`supported_extensions()`**: informa al usuario qué motor PDF está activo y su nivel de calidad.
-- Se añade logging con `velo.reader`.
+**Antes**: usaba `PyPDF2.PdfReader.extract_text()`, que con PDFs OCR produce texto defectuoso.
 
-### `visual.py`
+**Ahora**: usa `fitz.open()` + `page.get_text("text")` de PyMuPDF, que preserva el flujo natural del texto. PyPDF2 solo se activa como fallback si PyMuPDF no está instalado.
 
-- **`_is_char_level_ocr()`**: heurística que detecta capas de texto carácter-por-carácter (>40% de tokens son de un solo carácter).
-- **`_merge_char_level_words()`**: fusiona caracteres consecutivos de la misma línea cuando la distancia horizontal entre ellos es menor que el 40% de la altura media del carácter. Un hueco mayor se interpreta como espacio entre palabras. Los bboxes se expanden para cubrir la palabra completa.
-- Se integra automáticamente al final de `_words_from_text_layer()`.
+### 2. `visual.py` — Doble extracción (cambio principal)
 
-## Cómo aplicar
+**Antes**: una sola fuente — `page.get_text("words")` devolvía palabras individuales con bboxes, y el texto se reconstruía uniéndolas con espacios. Esa reconstrucción perdía formato, partía palabras por guiones, fusionaba tokens, etc.
 
-### Opción A: patch
+**Ahora**: dos fuentes independientes para páginas con capa de texto:
 
-```bash
-cd /ruta/a/Velo
-patch -p0 < velo_ocr_fix.patch
-```
+- `page.get_text("text")` → **texto canónico** de alta fidelidad que va al detector
+- `page.get_text("words")` → **bboxes** para la redacción visual
 
-### Opción B: reemplazo directo
+La función `_map_words_to_canonical()` alinea los bboxes contra el texto canónico mediante búsqueda secuencial: recorre las palabras en orden y localiza cada una en el texto canónico avanzando un cursor. Si una palabra no se encuentra exactamente, intenta búsqueda case-insensitive. Si sigue sin encontrarla, la descarta del mapa (sin cobertura de redacción, pero es más seguro que un mapeo erróneo).
 
-Copiar los dos ficheros de `velo_engine/` al repositorio, reemplazando los existentes.
+Para páginas procesadas con OCR propio (sin capa de texto nativa), se mantiene la reconstrucción palabra-por-palabra porque las palabras OCR son la única fuente.
 
-## Entrada para CHANGELOG.md
+### 3. `visual.py` — Corrección de capas OCR carácter-por-carácter
 
-```markdown
-## 0.3.1
+`_is_char_level_ocr()` detecta si >40% de los tokens son de un solo carácter. `_merge_char_level_words()` fusiona caracteres consecutivos de la misma línea cuando la distancia horizontal es menor que el 40% de la altura media.
 
-- **Extracción PDF mejorada**: el motor primario de lectura de PDF es ahora PyMuPDF (`page.get_text("text")`), que produce texto de alta calidad incluso con capas OCR. PyPDF2 queda como fallback de último recurso.
-- **Corrección de OCR carácter-por-carácter**: nueva heurística en el módulo visual que detecta capas de texto escritas carácter a carácter y fusiona los fragmentos en palabras reales basándose en la proximidad horizontal.
-- Logging mejorado en el módulo lector con indicación del motor PDF utilizado.
-```
+### 4. `visual.py` — Normalización Unicode
+
+`_clean_extracted_text()` aplica NFC, reemplaza espacios Unicode exóticos y elimina caracteres de control.
+
+## Ficheros a copiar
+
+| Fichero | Destino en el repo |
+|---|---|
+| `reader.py` | `Velo/velo_engine/reader.py` |
+| `visual.py` | `Velo/velo_engine/visual.py` |
+| `CHANGELOG.md` | `Velo/CHANGELOG.md` |
+| `RESUMEN_FIX_OCR.md` | `Velo/docs/RESUMEN_FIX_OCR.md` |
+| `velo_v031_full.patch` | `Velo/velo_v031_full.patch` |
 
 ## Tests recomendados
 
-1. **PDF con OCR bueno** (Tesseract reciente, ABBYY): verificar que el texto se extrae correctamente en ambas rutas (visual y no visual).
-2. **PDF con OCR carácter-por-carácter**: verificar que la heurística de fusión reconstruye las palabras correctamente y que los bboxes de las redacciones siguen cubriendo las zonas correctas.
-3. **PDF sin capa de texto**: verificar que el mensaje de error sigue siendo correcto.
-4. **Instalación solo con requirements.txt** (sin visual): verificar que ahora falla gracefully indicando que instale PyMuPDF.
+1. **PDF con capa OCR buena** (Tesseract reciente, ABBYY): verificar que el texto extraído es fiel al original.
+2. **PDF con OCR carácter-por-carácter**: verificar que la heurística de fusión reconstruye las palabras.
+3. **Redacción visual**: confirmar que los rectángulos negros cubren las zonas correctas tras el cambio de alineación.
+4. **PDF sin capa de texto + Tesseract**: verificar que la ruta OCR sigue funcionando (usa `_page_text_and_map`, no la nueva función).
+5. **Instalación solo con `requirements.txt`**: verificar que el fallback PyPDF2 funciona y muestra warning.

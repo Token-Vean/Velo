@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- **Extracción PDF mejorada**: el motor primario de lectura de PDF es ahora PyMuPDF (`page.get_text("text")`), que produce texto de alta calidad incluso con capas OCR. PyPDF2 queda como fallback de último recurso.
+- **Doble extracción visual**: el módulo visual ahora usa `get_text("text")` como texto canónico para el detector (alta fidelidad), y `get_text("words")` exclusivamente para los bboxes de redacción. La alineación se realiza por búsqueda secuencial de cada palabra en el texto canónico, eliminando los errores de la reconstrucción palabra-por-palabra.
+- **Corrección de OCR carácter-por-carácter**: nueva heurística que detecta capas de texto escritas carácter a carácter y fusiona los fragmentos en palabras reales basándose en la proximidad horizontal.
+- **Normalización Unicode**: limpieza automática de caracteres Unicode exóticos (NFC, espacios no estándar, caracteres de control) en el texto extraído.
+- Logging mejorado en el módulo lector con indicación del motor PDF utilizado.
+
 ## 0.3.0
 
 - **Detección de nombres**: los instaladores preguntan si se desea instalar spaCy + modelo español para detectar nombres de personas, organizaciones y lugares. Si ya estaba instalado, se reutiliza.

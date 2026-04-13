@@ -1,0 +1,554 @@
+diff --git a/velo_engine/reader.py b/velo_engine/reader.py
+index ff2896c..0197d95 100644
+--- a/velo_engine/reader.py
++++ b/velo_engine/reader.py
+@@ -1,11 +1,18 @@
+ """
+ Lector de ficheros.
+-Soporta TXT, DOCX y PDF (con texto extraíble).
++Soporta TXT, DOCX y PDF (con texto extraible).
+ Las dependencias para DOCX y PDF son opcionales.
++
++Estrategia de extraccion para PDF:
++  1. PyMuPDF (fitz) - motor primario, alta calidad incluso con capas OCR.
++  2. PyPDF2          - fallback si fitz no esta instalado.
+ """
+ 
++import logging
+ import os
+ 
++logger = logging.getLogger("velo.reader")
++
+ 
+ def read_file(filepath):
+     """Lee un fichero y devuelve su texto. Devuelve (texto, formato, error)."""
+@@ -45,17 +52,65 @@ def _read_docx(filepath):
+         paragraphs = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()]
+         text = "\n\n".join(paragraphs)
+         if not text.strip():
+-            return None, "docx", "El documento DOCX no contiene texto extraíble."
++            return None, "docx", "El documento DOCX no contiene texto extraible."
+         return text, "docx", None
+     except Exception as exc:
+         return None, "docx", f"Error al leer DOCX: {exc}"
+ 
+ 
++# ---------------------------------------------------------------------------
++# PDF: motor primario (PyMuPDF) + fallback (PyPDF2)
++# ---------------------------------------------------------------------------
++
+ def _read_pdf(filepath):
++    """Intenta extraer texto con PyMuPDF; si no esta disponible, usa PyPDF2."""
++    text, fmt, error = _read_pdf_fitz(filepath)
++    if error and "instale" in (error or "").lower():
++        logger.info("PyMuPDF no disponible, intentando PyPDF2 como fallback")
++        return _read_pdf_pypdf2(filepath)
++    return text, fmt, error
++
++
++def _read_pdf_fitz(filepath):
++    """Extraccion con PyMuPDF (fitz) - alta calidad."""
++    try:
++        import fitz  # noqa: F401
++    except ImportError:
++        return None, "pdf", (
++            "Para leer ficheros PDF con maxima calidad, instale PyMuPDF: "
++            "pip install PyMuPDF. Intentando motor alternativo..."
++        )
++
++    try:
++        document = fitz.open(filepath)
++        pages_text = []
++        for page in document:
++            page_text = (page.get_text("text") or "").strip()
++            if page_text:
++                pages_text.append(page_text)
++        document.close()
++
++        text = "\n\n".join(pages_text)
++        if not text.strip():
++            return None, "pdf", (
++                "El PDF no contiene texto extraible (puede ser un documento escaneado). "
++                "Para PDF escaneado haria falta un modulo OCR separado."
++            )
++        logger.info("PDF leido con PyMuPDF: %d paginas, %d caracteres", len(pages_text), len(text))
++        return text, "pdf", None
++    except Exception as exc:
++        return None, "pdf", f"Error al leer PDF con PyMuPDF: {exc}"
++
++
++def _read_pdf_pypdf2(filepath):
++    """Extraccion con PyPDF2 - fallback de menor calidad."""
+     try:
+         from PyPDF2 import PdfReader
+     except ImportError:
+-        return None, "pdf", "Para leer ficheros PDF, instale PyPDF2: pip install PyPDF2"
++        return None, "pdf", (
++            "Para leer ficheros PDF, instale PyMuPDF (pip install PyMuPDF) "
++            "o PyPDF2 (pip install PyPDF2)."
++        )
+ 
+     try:
+         reader = PdfReader(filepath)
+@@ -68,9 +123,14 @@ def _read_pdf(filepath):
+         text = "\n\n".join(pages_text)
+         if not text.strip():
+             return None, "pdf", (
+-                "El PDF no contiene texto extraíble (puede ser un documento escaneado). "
+-                "Para PDF escaneado haría falta un módulo OCR separado."
++                "El PDF no contiene texto extraible (puede ser un documento escaneado). "
++                "Para PDF escaneado haria falta un modulo OCR separado."
+             )
++        logger.warning(
++            "PDF leido con PyPDF2 (fallback): %d paginas. "
++            "Para mayor calidad en PDFs con OCR, instale PyMuPDF: pip install PyMuPDF",
++            len(pages_text),
++        )
+         return text, "pdf", None
+     except Exception as exc:
+         return None, "pdf", f"Error al leer PDF: {exc}"
+@@ -85,10 +145,19 @@ def supported_extensions():
+     except ImportError:
+         formats.append({"ext": ".docx", "label": "Word DOCX (instale python-docx)", "available": False})
+ 
++    pdf_available = False
++    pdf_label = "PDF"
+     try:
+-        import PyPDF2  # noqa: F401
+-        formats.append({"ext": ".pdf", "label": "PDF con texto", "available": True})
++        import fitz  # noqa: F401
++        pdf_available = True
++        pdf_label = "PDF con texto (PyMuPDF)"
+     except ImportError:
+-        formats.append({"ext": ".pdf", "label": "PDF (instale PyPDF2)", "available": False})
+-
++        try:
++            import PyPDF2  # noqa: F401
++            pdf_available = True
++            pdf_label = "PDF con texto (PyPDF2, calidad limitada)"
++        except ImportError:
++            pdf_label = "PDF (instale PyMuPDF o PyPDF2)"
++
++    formats.append({"ext": ".pdf", "label": pdf_label, "available": pdf_available})
+     return formats
+diff --git a/velo_engine/visual.py b/velo_engine/visual.py
+index 989e556..48d2922 100644
+--- a/velo_engine/visual.py
++++ b/velo_engine/visual.py
+@@ -1,10 +1,18 @@
+-"""Herramientas para revisión visual y aplicación de redacciones sobre PDFs.
++"""Herramientas para revision visual y aplicacion de redacciones sobre PDFs.
+ 
+-Genera una representación por páginas del PDF original, extrae palabras con
++Genera una representacion por paginas del PDF original, extrae palabras con
+ coordenadas a partir de la capa de texto y, cuando no existe, intenta OCR
+-sobre la imagen renderizada. Toda la información se guarda en una sesión
+-local efímera para permitir la revisión visual, la aplicación efectiva de las
+-redacciones sobre una copia del original y la exportación posterior.
++sobre la imagen renderizada. Toda la informacion se guarda en una sesion
++local efimera para permitir la revision visual, la aplicacion efectiva de las
++redacciones sobre una copia del original y la exportacion posterior.
++
++Estrategia de extraccion (v0.3.1):
++  - Paginas con capa de texto: se usa get_text("text") como texto canonico
++    de alta calidad para el detector, y get_text("words") unicamente para
++    obtener los bboxes necesarios para la redaccion visual. Los bboxes se
++    alinean contra el texto canonico mediante busqueda secuencial.
++  - Paginas con OCR (sin capa de texto): se reconstruye el texto a partir
++    de las palabras OCR, que son la unica fuente disponible.
+ """
+ 
+ from __future__ import annotations
+@@ -12,7 +20,10 @@ from __future__ import annotations
+ import json
+ import logging
+ import os
++import re
++import unicodedata
+ from collections import defaultdict
++from itertools import groupby
+ from typing import Dict, Iterable, List, Tuple
+ 
+ logger = logging.getLogger("velo.visual")
+@@ -26,7 +37,6 @@ except ImportError:
+ 
+ MAX_PDF_PAGES_VISUAL = 500
+ 
+-
+ TEXT_RENDER_SCALE = 2.0
+ SESSION_METADATA = "visual.json"
+ APPLIED_METADATA = "applied_original.json"
+@@ -78,10 +88,90 @@ def _render_page_image(page, image_path: str, scale: float = TEXT_RENDER_SCALE)
+     return int(pix.width), int(pix.height)
+ 
+ 
++# ---------------------------------------------------------------------------
++# Normalizacion y limpieza de texto
++# ---------------------------------------------------------------------------
++
+ def _normalize_word(word: str) -> str:
+-    return " ".join((word or "").replace(" ", " ").split())
++    return " ".join((word or "").replace("\u00a0", " ").split())
++
++
++def _clean_extracted_text(text: str) -> str:
++    """Normaliza Unicode y limpia caracteres problematicos del texto extraido."""
++    # Normalizar a NFC (forma compuesta canonica)
++    text = unicodedata.normalize("NFC", text)
++    # Reemplazar espacios Unicode exoticos por espacio normal
++    text = re.sub(r'[\u00a0\u2002\u2003\u2009\u200a\u202f]', ' ', text)
++    # Eliminar caracteres de control (excepto \n y \t)
++    text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
++    return text
++
++
++# ---------------------------------------------------------------------------
++# Deteccion y correccion de capas OCR caracter-por-caracter
++# ---------------------------------------------------------------------------
++
++def _is_char_level_ocr(raw_words: list) -> bool:
++    """Detecta si la capa de texto fue generada caracter por caracter."""
++    if len(raw_words) < 10:
++        return False
++    single_chars = sum(1 for w in raw_words if len(w.get("text", "")) == 1)
++    ratio = single_chars / len(raw_words)
++    if ratio > 0.40:
++        logger.info(
++            "Detectada capa OCR caracter-por-caracter (%.0f%% tokens de 1 char)",
++            ratio * 100,
++        )
++        return True
++    return False
++
++
++def _merge_char_level_words(words: List[dict], scale: float) -> List[dict]:
++    """Fusiona caracteres sueltos en palabras reales."""
++    if not words:
++        return words
++
++    merged: List[dict] = []
++    for _key, group in groupby(words, key=lambda w: w["line_key"]):
++        line_words = list(group)
++        if len(line_words) < 2:
++            merged.extend(line_words)
++            continue
++
++        avg_h = sum(w["bbox"][3] - w["bbox"][1] for w in line_words) / len(line_words)
++        gap_threshold = avg_h * 0.40
++
++        current = dict(line_words[0])
++        current["bbox"] = list(current["bbox"])
++
++        for nxt in line_words[1:]:
++            gap = nxt["bbox"][0] - current["bbox"][2]
++            if gap < gap_threshold:
++                current["text"] += nxt["text"]
++                current["bbox"][2] = nxt["bbox"][2]
++                current["bbox"][1] = min(current["bbox"][1], nxt["bbox"][1])
++                current["bbox"][3] = max(current["bbox"][3], nxt["bbox"][3])
++            else:
++                merged.append(current)
++                current = dict(nxt)
++                current["bbox"] = list(current["bbox"])
++
++        merged.append(current)
++
++    for idx, word in enumerate(merged):
++        word["word_no"] = idx
++
++    logger.info(
++        "Fusion de caracteres: %d fragmentos -> %d palabras",
++        len(words), len(merged),
++    )
++    return merged
+ 
+ 
++# ---------------------------------------------------------------------------
++# Extraccion de palabras (bboxes)
++# ---------------------------------------------------------------------------
++
+ def _words_from_text_layer(page, scale: float) -> List[dict]:
+     words = []
+     for item in page.get_text("words", sort=True):
+@@ -102,6 +192,11 @@ def _words_from_text_layer(page, scale: float) -> List[dict]:
+                 "source": "text_layer",
+             }
+         )
++
++    # Detectar y corregir capas OCR caracter-por-caracter
++    if _is_char_level_ocr(words):
++        words = _merge_char_level_words(words, scale)
++
+     return words
+ 
+ 
+@@ -144,7 +239,78 @@ def _words_from_ocr(image_path: str) -> List[dict]:
+     return words
+ 
+ 
++# ---------------------------------------------------------------------------
++# Mapeo de palabras contra texto canonico (doble extraccion)
++# ---------------------------------------------------------------------------
++
++def _map_words_to_canonical(
++    words: List[dict],
++    canonical_text: str,
++    global_offset: int,
++    page_number: int,
++) -> List[dict]:
++    """Asigna a cada palabra su posicion (start/end) dentro del texto canonico.
++
++    Recorre las palabras en orden y busca cada una secuencialmente en el
++    texto canonico. Si una palabra no se encuentra con busqueda exacta,
++    se intenta con normalizacion (minusculas). Las palabras que no se
++    puedan localizar se descartan del mapa (no tendran cobertura de
++    redaccion, pero es mas seguro que un mapeo erroneo).
++    """
++    mapped: List[dict] = []
++    scan_pos = 0  # cursor dentro de canonical_text
++
++    canonical_lower = canonical_text.lower()
++
++    for word in words:
++        w_text = word["text"]
++
++        # Busqueda exacta hacia adelante
++        pos = canonical_text.find(w_text, scan_pos)
++
++        # Fallback: busqueda case-insensitive
++        if pos == -1:
++            pos = canonical_lower.find(w_text.lower(), scan_pos)
++
++        if pos == -1:
++            # Palabra no localizable en el texto canonico.
++            # Puede ocurrir por ligaduras, guiones de particion, etc.
++            logger.debug(
++                "Palabra no mapeada al texto canonico: %r (scan_pos=%d/%d)",
++                w_text, scan_pos, len(canonical_text),
++            )
++            continue
++
++        start = global_offset + pos
++        end = start + len(w_text)
++
++        mapped.append(
++            {
++                "text": w_text,
++                "bbox": word["bbox"],
++                "start": start,
++                "end": end,
++                "line_key": word["line_key"],
++                "page": page_number,
++                "source": word["source"],
++            }
++        )
++        scan_pos = pos + len(w_text)
++
++    return mapped
++
++
++# ---------------------------------------------------------------------------
++# Reconstruccion de texto a partir de palabras (fallback para OCR)
++# ---------------------------------------------------------------------------
++
+ def _page_text_and_map(words: Iterable[dict], global_offset: int, page_number: int) -> Tuple[str, List[dict], int]:
++    """Reconstruye texto a partir de palabras individuales.
++
++    Se usa SOLO para paginas procesadas con OCR propio, donde no existe
++    un texto canonico de PyMuPDF. Para paginas con capa de texto se usa
++    _map_words_to_canonical en su lugar.
++    """
+     page_words: List[dict] = []
+     text_parts: List[str] = []
+     cursor = global_offset
+@@ -181,32 +347,36 @@ def _page_text_and_map(words: Iterable[dict], global_offset: int, page_number: i
+     return "".join(text_parts), page_words, cursor
+ 
+ 
++# ---------------------------------------------------------------------------
++# Funcion principal de procesamiento visual de PDF
++# ---------------------------------------------------------------------------
++
+ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str) -> Tuple[str, str, str | None, dict | None]:
+     caps = visual_capabilities()
+     if not caps["fitz"]:
+-        logger.warning("Revisión visual no disponible: falta PyMuPDF (fitz)")
+-        return None, "pdf", "La revisión visual de PDF requiere PyMuPDF (fitz).", None
++        logger.warning("Revision visual no disponible: falta PyMuPDF (fitz)")
++        return None, "pdf", "La revision visual de PDF requiere PyMuPDF (fitz).", None
+ 
+     import fitz
+ 
+     file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+-    logger.info("Procesando PDF: %.1f MB, sesión=%s", file_size_mb, session_id)
++    logger.info("Procesando PDF: %.1f MB, sesion=%s", file_size_mb, session_id)
+ 
+     assets_dir = _ensure_dirs(session_dir)
+     document = fitz.open(filepath)
+     if document.page_count > MAX_PDF_PAGES_VISUAL:
+         logger.warning(
+-            "PDF rechazado por exceso de páginas: %d (máx: %d), tamaño=%.1f MB, sesión=%s",
++            "PDF rechazado por exceso de paginas: %d (max: %d), tamanio=%.1f MB, sesion=%s",
+             document.page_count, MAX_PDF_PAGES_VISUAL, file_size_mb, session_id,
+         )
+         document.close()
+         return None, "pdf", f"PDF con {document.page_count} paginas. Maximo: {MAX_PDF_PAGES_VISUAL}.", None
+ 
+-    logger.info("PDF abierto: %d páginas, %.1f MB, sesión=%s", document.page_count, file_size_mb, session_id)
++    logger.info("PDF abierto: %d paginas, %.1f MB, sesion=%s", document.page_count, file_size_mb, session_id)
+     pages = []
+     parts: List[str] = []
+     global_offset = 0
+-    any_words = False
++    any_text = False
+     used_ocr = False
+     used_text_layer = False
+ 
+@@ -216,27 +386,75 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
+         image_path = os.path.join(assets_dir, image_name)
+         width, height = _render_page_image(page, image_path, TEXT_RENDER_SCALE)
+ 
+-        page_words = _words_from_text_layer(page, TEXT_RENDER_SCALE)
++        # ---------------------------------------------------------------
++        # Intentar capa de texto nativa (doble extraccion)
++        # ---------------------------------------------------------------
++        page_words_raw = _words_from_text_layer(page, TEXT_RENDER_SCALE)
+         source = "text_layer"
+-        if page_words:
+-            used_text_layer = True
+-        elif caps["pytesseract"] and caps["tesseract_ready"]:
+-            page_words = _words_from_ocr(image_path)
+-            source = "ocr"
+-            used_ocr = True
+-        else:
+-            source = "none"
+ 
+         page_text_start = global_offset
+-        mapped_words = []
+-        if page_words:
+-            any_words = True
+-            page_text, mapped_words, global_offset = _page_text_and_map(page_words, global_offset, page_index + 1)
++        mapped_words: List[dict] = []
++        page_text = ""
++
++        if page_words_raw:
++            used_text_layer = True
++            any_text = True
++
++            # Texto canonico: alta calidad, flujo natural
++            canonical = _clean_extracted_text(page.get_text("text") or "")
++            canonical = canonical.strip()
++
++            if canonical:
++                # Ruta principal: texto canonico + mapeo de bboxes
++                mapped_words = _map_words_to_canonical(
++                    page_words_raw, canonical, global_offset, page_index + 1,
++                )
++                page_text = canonical
++                global_offset += len(canonical)
++                unmapped = len(page_words_raw) - len(mapped_words)
++                if unmapped > 0:
++                    logger.info(
++                        "Pagina %d: %d/%d palabras mapeadas al texto canonico "
++                        "(%d sin mapear)",
++                        page_index + 1, len(mapped_words),
++                        len(page_words_raw), unmapped,
++                    )
++            else:
++                # Fallback raro: hay palabras pero get_text("text") vacio
++                logger.warning(
++                    "Pagina %d: get_text('words') devolvio datos pero "
++                    "get_text('text') esta vacio; reconstruyendo desde palabras",
++                    page_index + 1,
++                )
++                page_text, mapped_words, global_offset = _page_text_and_map(
++                    page_words_raw, global_offset, page_index + 1,
++                )
++
+             parts.append(page_text)
+             if page_index < document.page_count - 1:
+                 parts.append("\n\n")
+                 global_offset += 2
+ 
++        # ---------------------------------------------------------------
++        # Sin capa de texto: intentar OCR
++        # ---------------------------------------------------------------
++        elif caps["pytesseract"] and caps["tesseract_ready"]:
++            ocr_words = _words_from_ocr(image_path)
++            source = "ocr"
++            used_ocr = True
++
++            if ocr_words:
++                any_text = True
++                page_text, mapped_words, global_offset = _page_text_and_map(
++                    ocr_words, global_offset, page_index + 1,
++                )
++                parts.append(page_text)
++                if page_index < document.page_count - 1:
++                    parts.append("\n\n")
++                    global_offset += 2
++        else:
++            source = "none"
++
+         pages.append(
+             {
+                 "page": page_index + 1,
+@@ -253,21 +471,23 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
+ 
+     document.close()
+ 
+-    if not any_words:
++    if not any_text:
+         logger.warning(
+-            "PDF sin texto extraíble: %d páginas, %.1f MB, sesión=%s. Sugerencia: instalar Tesseract OCR.",
++            "PDF sin texto extraible: %d paginas, %.1f MB, sesion=%s. "
++            "Sugerencia: instalar Tesseract OCR.",
+             document.page_count, file_size_mb, session_id,
+         )
+         return (
+             None,
+             "pdf",
+-            "No se ha podido obtener texto ni coordenadas del PDF original. Instale Tesseract OCR para PDF escaneados.",
++            "No se ha podido obtener texto ni coordenadas del PDF original. "
++            "Instale Tesseract OCR para PDF escaneados.",
+             None,
+         )
+ 
+     text = "".join(parts)
+     logger.info(
+-        "PDF procesado correctamente: %d páginas, %d caracteres, modo=%s, sesión=%s",
++        "PDF procesado correctamente: %d paginas, %d caracteres, modo=%s, sesion=%s",
+         len(pages), len(text),
+         "hybrid" if used_ocr and used_text_layer else ("ocr" if used_ocr else "text_layer"),
+         session_id,
+@@ -289,6 +509,10 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
+     return text, "pdf", None, metadata
+ 
+ 
++# ---------------------------------------------------------------------------
++# Carga de metadatos de sesion
++# ---------------------------------------------------------------------------
++
+ def load_session_metadata(session_dir: str) -> dict:
+     with open(os.path.join(session_dir, SESSION_METADATA), "r", encoding="utf-8") as handle:
+         return json.load(handle)
+@@ -299,6 +523,10 @@ def load_applied_metadata(session_dir: str) -> dict:
+         return json.load(handle)
+ 
+ 
++# ---------------------------------------------------------------------------
++# Aplicacion de redacciones visuales
++# ---------------------------------------------------------------------------
++
+ def _rectangles_for_page(page_meta: dict, confirmed_findings: List[dict]) -> List[List[float]]:
+     per_group: Dict[Tuple[str, str], List[List[float]]] = defaultdict(list)
+     words = page_meta.get("words", [])
+@@ -378,7 +606,7 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
+         )
+ 
+     if not rendered_pages:
+-        raise ValueError("No hay páginas renderizadas para aplicar las redacciones.")
++        raise ValueError("No hay paginas renderizadas para aplicar las redacciones.")
+ 
+     output_path = os.path.join(session_dir, APPLIED_PDF_NAME)
+     first, rest = rendered_pages[0], rendered_pages[1:]
