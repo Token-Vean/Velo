@@ -82,6 +82,79 @@ def _normalize_word(word: str) -> str:
     return " ".join((word or "").replace(" ", " ").split())
 
 
+def _is_char_level_ocr(raw_words: list) -> bool:
+    """Detecta si la capa de texto fue generada caracter por caracter.
+
+    Heuristica: si mas del 40% de las 'palabras' son un solo caracter
+    alfanumerico, probablemente el motor OCR escribio cada caracter como
+    un elemento independiente en la capa de texto.
+    """
+    if len(raw_words) < 10:
+        return False
+    single_chars = sum(1 for w in raw_words if len(w.get("text", "")) == 1)
+    ratio = single_chars / len(raw_words)
+    if ratio > 0.40:
+        logger.info(
+            "Detectada capa OCR caracter-por-caracter (%.0f%% tokens de 1 char)",
+            ratio * 100,
+        )
+        return True
+    return False
+
+
+def _merge_char_level_words(words: List[dict], scale: float) -> List[dict]:
+    """Fusiona caracteres sueltos en palabras reales.
+
+    Agrupa elementos de la misma linea cuya distancia horizontal sea
+    menor que un umbral proporcional a la altura media de caracter.
+    Un hueco mayor que ese umbral se interpreta como separador de palabra.
+    """
+    if not words:
+        return words
+
+    from itertools import groupby
+    merged: List[dict] = []
+    for _key, group in groupby(words, key=lambda w: w["line_key"]):
+        line_words = list(group)
+        if len(line_words) < 2:
+            merged.extend(line_words)
+            continue
+
+        # Calcular altura media para estimar umbral de separacion
+        avg_h = sum(w["bbox"][3] - w["bbox"][1] for w in line_words) / len(line_words)
+        # Umbral: si el hueco entre fin de un caracter e inicio del siguiente
+        # es mayor que ~40% de la altura media, es un espacio entre palabras
+        gap_threshold = avg_h * 0.40
+
+        current = dict(line_words[0])
+        current["bbox"] = list(current["bbox"])
+
+        for nxt in line_words[1:]:
+            gap = nxt["bbox"][0] - current["bbox"][2]
+            if gap < gap_threshold:
+                # Fusionar: concatenar texto, expandir bbox
+                current["text"] += nxt["text"]
+                current["bbox"][2] = nxt["bbox"][2]
+                current["bbox"][1] = min(current["bbox"][1], nxt["bbox"][1])
+                current["bbox"][3] = max(current["bbox"][3], nxt["bbox"][3])
+            else:
+                merged.append(current)
+                current = dict(nxt)
+                current["bbox"] = list(current["bbox"])
+
+        merged.append(current)
+
+    # Renumerar word_no
+    for idx, word in enumerate(merged):
+        word["word_no"] = idx
+
+    logger.info(
+        "Fusion de caracteres: %d fragmentos -> %d palabras",
+        len(words), len(merged),
+    )
+    return merged
+
+
 def _words_from_text_layer(page, scale: float) -> List[dict]:
     words = []
     for item in page.get_text("words", sort=True):
@@ -102,6 +175,11 @@ def _words_from_text_layer(page, scale: float) -> List[dict]:
                 "source": "text_layer",
             }
         )
+
+    # Detectar y corregir capas OCR caracter-por-caracter
+    if _is_char_level_ocr(words):
+        words = _merge_char_level_words(words, scale)
+
     return words
 
 

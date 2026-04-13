@@ -1,10 +1,17 @@
 """
 Lector de ficheros.
-Soporta TXT, DOCX y PDF (con texto extraíble).
+Soporta TXT, DOCX y PDF (con texto extraible).
 Las dependencias para DOCX y PDF son opcionales.
+
+Estrategia de extraccion para PDF:
+  1. PyMuPDF (fitz) - motor primario, alta calidad incluso con capas OCR.
+  2. PyPDF2          - fallback si fitz no esta instalado.
 """
 
+import logging
 import os
+
+logger = logging.getLogger("velo.reader")
 
 
 def read_file(filepath):
@@ -45,17 +52,68 @@ def _read_docx(filepath):
         paragraphs = [paragraph.text for paragraph in doc.paragraphs if paragraph.text.strip()]
         text = "\n\n".join(paragraphs)
         if not text.strip():
-            return None, "docx", "El documento DOCX no contiene texto extraíble."
+            return None, "docx", "El documento DOCX no contiene texto extraible."
         return text, "docx", None
     except Exception as exc:
         return None, "docx", f"Error al leer DOCX: {exc}"
 
 
+# ---------------------------------------------------------------------------
+# PDF: motor primario (PyMuPDF) + fallback (PyPDF2)
+# ---------------------------------------------------------------------------
+
 def _read_pdf(filepath):
+    """Intenta extraer texto con PyMuPDF; si no esta disponible, usa PyPDF2."""
+    text, fmt, error = _read_pdf_fitz(filepath)
+    if error and "instale" in (error or "").lower():
+        # fitz no disponible -> intentar PyPDF2
+        logger.info("PyMuPDF no disponible, intentando PyPDF2 como fallback")
+        return _read_pdf_pypdf2(filepath)
+    return text, fmt, error
+
+
+def _read_pdf_fitz(filepath):
+    """Extraccion con PyMuPDF (fitz) - alta calidad."""
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        return None, "pdf", (
+            "Para leer ficheros PDF con maxima calidad, instale PyMuPDF: "
+            "pip install PyMuPDF. Intentando motor alternativo..."
+        )
+
+    try:
+        document = fitz.open(filepath)
+        pages_text = []
+        for page in document:
+            # get_text("text") conserva el flujo natural del texto,
+            # incluyendo saltos de linea y espaciado originales.
+            page_text = (page.get_text("text") or "").strip()
+            if page_text:
+                pages_text.append(page_text)
+        document.close()
+
+        text = "\n\n".join(pages_text)
+        if not text.strip():
+            return None, "pdf", (
+                "El PDF no contiene texto extraible (puede ser un documento escaneado). "
+                "Para PDF escaneado haria falta un modulo OCR separado."
+            )
+        logger.info("PDF leido con PyMuPDF: %d paginas, %d caracteres", len(pages_text), len(text))
+        return text, "pdf", None
+    except Exception as exc:
+        return None, "pdf", f"Error al leer PDF con PyMuPDF: {exc}"
+
+
+def _read_pdf_pypdf2(filepath):
+    """Extraccion con PyPDF2 - fallback de menor calidad."""
     try:
         from PyPDF2 import PdfReader
     except ImportError:
-        return None, "pdf", "Para leer ficheros PDF, instale PyPDF2: pip install PyPDF2"
+        return None, "pdf", (
+            "Para leer ficheros PDF, instale PyMuPDF (pip install PyMuPDF) "
+            "o PyPDF2 (pip install PyPDF2)."
+        )
 
     try:
         reader = PdfReader(filepath)
@@ -68,9 +126,14 @@ def _read_pdf(filepath):
         text = "\n\n".join(pages_text)
         if not text.strip():
             return None, "pdf", (
-                "El PDF no contiene texto extraíble (puede ser un documento escaneado). "
-                "Para PDF escaneado haría falta un módulo OCR separado."
+                "El PDF no contiene texto extraible (puede ser un documento escaneado). "
+                "Para PDF escaneado haria falta un modulo OCR separado."
             )
+        logger.warning(
+            "PDF leido con PyPDF2 (fallback): %d paginas. "
+            "Para mayor calidad en PDFs con OCR, instale PyMuPDF: pip install PyMuPDF",
+            len(pages_text),
+        )
         return text, "pdf", None
     except Exception as exc:
         return None, "pdf", f"Error al leer PDF: {exc}"
@@ -85,10 +148,20 @@ def supported_extensions():
     except ImportError:
         formats.append({"ext": ".docx", "label": "Word DOCX (instale python-docx)", "available": False})
 
+    # Comprobar el mejor motor PDF disponible
+    pdf_available = False
+    pdf_label = "PDF"
     try:
-        import PyPDF2  # noqa: F401
-        formats.append({"ext": ".pdf", "label": "PDF con texto", "available": True})
+        import fitz  # noqa: F401
+        pdf_available = True
+        pdf_label = "PDF con texto (PyMuPDF)"
     except ImportError:
-        formats.append({"ext": ".pdf", "label": "PDF (instale PyPDF2)", "available": False})
+        try:
+            import PyPDF2  # noqa: F401
+            pdf_available = True
+            pdf_label = "PDF con texto (PyPDF2, calidad limitada)"
+        except ImportError:
+            pdf_label = "PDF (instale PyMuPDF o PyPDF2)"
 
+    formats.append({"ext": ".pdf", "label": pdf_label, "available": pdf_available})
     return formats
