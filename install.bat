@@ -4,7 +4,7 @@ setlocal EnableDelayedExpansion
 
 echo.
 echo  ======================================================
-echo   Velo - Detector de datos sensibles v0.2.5
+echo   Velo - Detector de datos sensibles v0.3.0
 echo  ======================================================
 echo.
 
@@ -104,6 +104,73 @@ if %errorlevel% equ 0 (
     echo           Velo arrancará igualmente en modo base.
 )
 
+REM === Detección de nombres (spaCy) ===
+echo.
+%PYTHON_CMD% -c "import spacy" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo   [OK] spaCy ya instalado
+    goto :check_spacy_model
+)
+
+echo  ------------------------------------------------------
+echo   DETECCION DE NOMBRES Y APELLIDOS (opcional)
+echo  ------------------------------------------------------
+echo.
+echo   Velo puede detectar nombres de personas, organizaciones
+echo   y lugares usando inteligencia artificial (spaCy).
+echo.
+echo   Esto requiere descargar ~50 MB adicionales.
+echo   Sin esta opción, Velo solo detecta patrones como
+echo   DNI, teléfonos, emails, IBAN, etc.
+echo.
+set /p "INSTALL_NLP=  Desea instalar la detección de nombres? S/N: "
+if /i not "%INSTALL_NLP%"=="S" (
+    echo.
+    echo   [--] Detección de nombres omitida.
+    echo       Puede instalarla después con:
+    echo       pip install -r requirements-nlp.txt
+    echo       python -m spacy download es_core_news_md
+    goto :start_velo
+)
+
+echo.
+echo   Instalando spaCy...
+%PYTHON_CMD% -m pip install -r requirements-nlp.txt --no-warn-script-location
+if %errorlevel% neq 0 (
+    echo   [AVISO] No se pudo instalar spaCy.
+    goto :start_velo
+)
+echo   [OK] spaCy instalado
+
+:check_spacy_model
+echo   Comprobando modelo de idioma español...
+%PYTHON_CMD% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo   [OK] Modelo es_core_news_md disponible
+    goto :start_velo
+)
+%PYTHON_CMD% -c "import spacy; spacy.load('es_core_news_sm')" >nul 2>&1
+if %errorlevel% equ 0 (
+    echo   [OK] Modelo es_core_news_sm disponible
+    goto :start_velo
+)
+
+echo   Descargando modelo español (es_core_news_md)...
+%PYTHON_CMD% -m spacy download es_core_news_md --no-warn-script-location
+if %errorlevel% equ 0 (
+    echo   [OK] Modelo es_core_news_md instalado
+) else (
+    echo   Intentando modelo ligero (es_core_news_sm)...
+    %PYTHON_CMD% -m spacy download es_core_news_sm --no-warn-script-location
+    if %errorlevel% equ 0 (
+        echo   [OK] Modelo es_core_news_sm instalado
+    ) else (
+        echo   [AVISO] No se pudo descargar el modelo español.
+        echo           La detección de nombres no estará disponible.
+    )
+)
+
+:start_velo
 echo.
 echo   Iniciando Velo...
 echo   Use el botón Apagar en la interfaz para detener

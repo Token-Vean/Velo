@@ -6,7 +6,7 @@ Spanish version: [README.md](README.md)
 
 ## Project Status
 
-Current code version: **0.2.5**.
+Current code version: **0.3.0**.
 
 The project is functional for local review and the generation of redacted derivative copies. It should not be presented as automatic proof of regulatory compliance, nor as a substitute for archival, legal, or data protection review.
 
@@ -28,13 +28,21 @@ The project is functional for local review and the generation of redacted deriva
 
 ## Current Capabilities
 
-### Core Detection
+### Core Detection (regex)
 
 - Spanish DNI and NIE with basic validation
 - Postal addresses based on pattern matching
 - Telephone numbers, email addresses, and IBAN accounts
 - Social Security numbers and payment card numbers based on patterns
 - Manual marking from the interface
+
+### NER Detection (spaCy, optional)
+
+- Person names (first names and surnames)
+- Organizations and institutions
+- Places and geographical names
+- Activated automatically if spaCy and a Spanish model are installed
+- The installer prompts whether to install this layer during first run
 
 ### Document Support
 
@@ -54,6 +62,12 @@ The project is functional for local review and the generation of redacted deriva
 
 - Dependencies listed in `requirements-visual.txt`
 - For OCR on scanned PDFs: Tesseract OCR installed on the system and available in `PATH`
+
+### Name Detection (NLP, optional)
+
+- Dependencies listed in `requirements-nlp.txt` (spaCy)
+- Spanish model: `python -m spacy download es_core_news_md`
+- The installer prompts during first run whether to install this layer
 
 ## Installation
 
@@ -88,7 +102,9 @@ chmod +x install.sh
 
 ```bash
 python -m pip install -r requirements.txt
-python -m pip install -r requirements-visual.txt  # optional
+python -m pip install -r requirements-visual.txt  # optional: visual PDF review
+python -m pip install -r requirements-nlp.txt     # optional: name detection
+python -m spacy download es_core_news_md          # optional: Spanish NER model
 python run.py
 ```
 
@@ -109,6 +125,7 @@ velo/
 ├── install.command
 ├── install.sh
 ├── requirements.txt
+├── requirements-nlp.txt
 ├── requirements-visual.txt
 ├── run.py
 └── velo_engine/

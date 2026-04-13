@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ── Constantes ───────────────────────────────────────────
 RATE_LIMIT_WINDOW = 60
 RATE_LIMIT_MAX = 30
-MAX_PDF_PAGES = 100
+MAX_PDF_PAGES = 500
 
 
 # ── Rate limiter ─────────────────────────────────────────

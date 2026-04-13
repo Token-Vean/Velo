@@ -1,0 +1,746 @@
+diff -ruN '--exclude=.git' Velo/CHANGELOG.md Velo-patched/CHANGELOG.md
+--- Velo/CHANGELOG.md	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/CHANGELOG.md	2026-04-13 09:20:16.926972575 +0000
+@@ -1,5 +1,13 @@
+ # Changelog
+ 
++## 0.3.0
++
++- **Detección de nombres**: los instaladores preguntan si se desea instalar spaCy + modelo español para detectar nombres de personas, organizaciones y lugares. Si ya estaba instalado, se reutiliza.
++- **Límites ampliados**: tamaño máximo de fichero subido a 100 MB (antes 16 MB), límite de texto extraído a 2.000.000 caracteres (antes 500.000), límite de páginas PDF a 500 (antes 100).
++- **Logging centralizado**: nuevo sistema de logs rotativos en `workspace/logs/velo.log` con registros detallados de cada fichero procesado, errores de extracción, límites alcanzados y estado de las capas de detección.
++- **Mejor gestión de errores**: manejador HTTP 413 con mensaje informativo cuando un fichero excede el tamaño máximo; los mensajes de error al usuario incluyen el tipo de excepción para facilitar diagnóstico.
++- Nuevo fichero `requirements-nlp.txt` para dependencias de detección NER.
++
+ ## 0.2.5
+ 
+ - Corrección del desfase de offsets en la alineación visual entre texto reconstruido y cajas proyectadas.
+diff -ruN '--exclude=.git' Velo/README.en.md Velo-patched/README.en.md
+--- Velo/README.en.md	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/README.en.md	2026-04-13 09:22:10.785938643 +0000
+@@ -6,7 +6,7 @@
+ 
+ ## Project Status
+ 
+-Current code version: **0.2.5**.
++Current code version: **0.3.0**.
+ 
+ The project is functional for local review and the generation of redacted derivative copies. It should not be presented as automatic proof of regulatory compliance, nor as a substitute for archival, legal, or data protection review.
+ 
+@@ -28,7 +28,7 @@
+ 
+ ## Current Capabilities
+ 
+-### Core Detection
++### Core Detection (regex)
+ 
+ - Spanish DNI and NIE with basic validation
+ - Postal addresses based on pattern matching
+@@ -36,6 +36,14 @@
+ - Social Security numbers and payment card numbers based on patterns
+ - Manual marking from the interface
+ 
++### NER Detection (spaCy, optional)
++
++- Person names (first names and surnames)
++- Organizations and institutions
++- Places and geographical names
++- Activated automatically if spaCy and a Spanish model are installed
++- The installer prompts whether to install this layer during first run
++
+ ### Document Support
+ 
+ - **TXT:** native support
+@@ -55,6 +63,12 @@
+ - Dependencies listed in `requirements-visual.txt`
+ - For OCR on scanned PDFs: Tesseract OCR installed on the system and available in `PATH`
+ 
++### Name Detection (NLP, optional)
++
++- Dependencies listed in `requirements-nlp.txt` (spaCy)
++- Spanish model: `python -m spacy download es_core_news_md`
++- The installer prompts during first run whether to install this layer
++
+ ## Installation
+ 
+ ### Windows
+@@ -88,7 +102,9 @@
+ 
+ ```bash
+ python -m pip install -r requirements.txt
+-python -m pip install -r requirements-visual.txt  # optional
++python -m pip install -r requirements-visual.txt  # optional: visual PDF review
++python -m pip install -r requirements-nlp.txt     # optional: name detection
++python -m spacy download es_core_news_md          # optional: Spanish NER model
+ python run.py
+ ```
+ 
+@@ -109,6 +125,7 @@
+ ├── install.command
+ ├── install.sh
+ ├── requirements.txt
++├── requirements-nlp.txt
+ ├── requirements-visual.txt
+ ├── run.py
+ └── velo_engine/
+diff -ruN '--exclude=.git' Velo/README.md Velo-patched/README.md
+--- Velo/README.md	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/README.md	2026-04-13 09:21:44.662946428 +0000
+@@ -4,7 +4,7 @@
+ 
+ ## Estado del proyecto
+ 
+-Versión actual del código: **0.2.5**.
++Versión actual del código: **0.3.0**.
+ 
+ El proyecto es funcional para revisión local y generación de copias derivadas redactadas. No debe presentarse como certificación de cumplimiento normativo automático ni como sustituto de una revisión archivística, jurídica o de protección de datos.
+ 
+@@ -26,7 +26,7 @@
+ 
+ ## Capacidades actuales
+ 
+-### Detección base
++### Detección base (regex)
+ 
+ - DNI y NIE con validación básica.
+ - Direcciones postales por patrones.
+@@ -34,6 +34,14 @@
+ - Números de Seguridad Social y tarjetas por patrones.
+ - Marcación manual desde la interfaz.
+ 
++### Detección NER (spaCy, opcional)
++
++- Nombres de personas (nombres y apellidos).
++- Organizaciones e instituciones.
++- Lugares y topónimos.
++- Se activa automáticamente si spaCy y un modelo español están instalados.
++- El instalador pregunta si se desea instalar esta capa durante la primera ejecución.
++
+ ### Soporte documental
+ 
+ - **TXT**: soporte nativo.
+@@ -53,6 +61,12 @@
+ - Dependencias de `requirements-visual.txt`.
+ - Para OCR de PDF escaneado: Tesseract OCR instalado en el sistema y disponible en `PATH`.
+ 
++### Detección de nombres (NLP, opcional)
++
++- Dependencias de `requirements-nlp.txt` (spaCy).
++- Modelo español: `python -m spacy download es_core_news_md`.
++- El instalador pregunta durante la primera ejecución si se desea instalar esta capa.
++
+ ## Instalación
+ 
+ ### Windows
+@@ -76,7 +90,9 @@
+ 
+ ```bash
+ python -m pip install -r requirements.txt
+-python -m pip install -r requirements-visual.txt  # opcional
++python -m pip install -r requirements-visual.txt  # opcional: revisión visual PDF
++python -m pip install -r requirements-nlp.txt     # opcional: detección de nombres
++python -m spacy download es_core_news_md          # opcional: modelo español para NER
+ python run.py
+ ```
+ 
+@@ -96,6 +112,7 @@
+ ├── install.command
+ ├── install.sh
+ ├── requirements.txt
++├── requirements-nlp.txt
+ ├── requirements-visual.txt
+ ├── run.py
+ └── velo_engine/
+diff -ruN '--exclude=.git' Velo/install.bat Velo-patched/install.bat
+--- Velo/install.bat	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/install.bat	2026-04-13 09:19:47.266981415 +0000
+@@ -4,7 +4,7 @@
+ 
+ echo.
+ echo  ======================================================
+-echo   Velo - Detector de datos sensibles v0.2.5
++echo   Velo - Detector de datos sensibles v0.3.0
+ echo  ======================================================
+ echo.
+ 
+@@ -104,6 +104,73 @@
+     echo           Velo arrancará igualmente en modo base.
+ )
+ 
++REM === Detección de nombres (spaCy) ===
++echo.
++%PYTHON_CMD% -c "import spacy" >nul 2>&1
++if %errorlevel% equ 0 (
++    echo   [OK] spaCy ya instalado
++    goto :check_spacy_model
++)
++
++echo  ------------------------------------------------------
++echo   DETECCION DE NOMBRES Y APELLIDOS (opcional)
++echo  ------------------------------------------------------
++echo.
++echo   Velo puede detectar nombres de personas, organizaciones
++echo   y lugares usando inteligencia artificial (spaCy).
++echo.
++echo   Esto requiere descargar ~50 MB adicionales.
++echo   Sin esta opción, Velo solo detecta patrones como
++echo   DNI, teléfonos, emails, IBAN, etc.
++echo.
++set /p "INSTALL_NLP=  Desea instalar la detección de nombres? S/N: "
++if /i not "%INSTALL_NLP%"=="S" (
++    echo.
++    echo   [--] Detección de nombres omitida.
++    echo       Puede instalarla después con:
++    echo       pip install -r requirements-nlp.txt
++    echo       python -m spacy download es_core_news_md
++    goto :start_velo
++)
++
++echo.
++echo   Instalando spaCy...
++%PYTHON_CMD% -m pip install -r requirements-nlp.txt --no-warn-script-location
++if %errorlevel% neq 0 (
++    echo   [AVISO] No se pudo instalar spaCy.
++    goto :start_velo
++)
++echo   [OK] spaCy instalado
++
++:check_spacy_model
++echo   Comprobando modelo de idioma español...
++%PYTHON_CMD% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
++if %errorlevel% equ 0 (
++    echo   [OK] Modelo es_core_news_md disponible
++    goto :start_velo
++)
++%PYTHON_CMD% -c "import spacy; spacy.load('es_core_news_sm')" >nul 2>&1
++if %errorlevel% equ 0 (
++    echo   [OK] Modelo es_core_news_sm disponible
++    goto :start_velo
++)
++
++echo   Descargando modelo español (es_core_news_md)...
++%PYTHON_CMD% -m spacy download es_core_news_md --no-warn-script-location
++if %errorlevel% equ 0 (
++    echo   [OK] Modelo es_core_news_md instalado
++) else (
++    echo   Intentando modelo ligero (es_core_news_sm)...
++    %PYTHON_CMD% -m spacy download es_core_news_sm --no-warn-script-location
++    if %errorlevel% equ 0 (
++        echo   [OK] Modelo es_core_news_sm instalado
++    ) else (
++        echo   [AVISO] No se pudo descargar el modelo español.
++        echo           La detección de nombres no estará disponible.
++    )
++)
++
++:start_velo
+ echo.
+ echo   Iniciando Velo...
+ echo   Use el botón Apagar en la interfaz para detener
+diff -ruN '--exclude=.git' Velo/install.sh Velo-patched/install.sh
+--- Velo/install.sh	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/install.sh	2026-04-13 09:20:07.032975524 +0000
+@@ -4,7 +4,7 @@
+ 
+ echo
+ echo "======================================================"
+-echo " Velo - Detector de datos sensibles v0.2.5"
++echo " Velo - Detector de datos sensibles v0.3.0"
+ echo "======================================================"
+ echo
+ 
+@@ -33,6 +33,64 @@
+   echo "        Velo arrancará igualmente en modo base."
+ fi
+ 
++# === Detección de nombres (spaCy) ===
++echo
++if $PYTHON_CMD -c "import spacy" 2>/dev/null; then
++  echo "[OK] spaCy ya instalado"
++else
++  echo "------------------------------------------------------"
++  echo " DETECCIÓN DE NOMBRES Y APELLIDOS (opcional)"
++  echo "------------------------------------------------------"
++  echo
++  echo "Velo puede detectar nombres de personas, organizaciones"
++  echo "y lugares usando inteligencia artificial (spaCy)."
++  echo
++  echo "Esto requiere descargar ~50 MB adicionales."
++  echo "Sin esta opción, Velo solo detecta patrones como"
++  echo "DNI, teléfonos, emails, IBAN, etc."
++  echo
++  read -rp "¿Desea instalar la detección de nombres? [S/n]: " INSTALL_NLP
++  INSTALL_NLP="${INSTALL_NLP:-S}"
++
++  if [[ "${INSTALL_NLP^^}" != "S" ]]; then
++    echo
++    echo "[--] Detección de nombres omitida."
++    echo "     Puede instalarla después con:"
++    echo "     pip install -r requirements-nlp.txt"
++    echo "     python -m spacy download es_core_news_md"
++  else
++    echo
++    echo "Instalando spaCy..."
++    if $PYTHON_CMD -m pip install -r requirements-nlp.txt; then
++      echo "[OK] spaCy instalado"
++    else
++      echo "[AVISO] No se pudo instalar spaCy."
++    fi
++  fi
++fi
++
++# Comprobar modelo español
++if $PYTHON_CMD -c "import spacy" 2>/dev/null; then
++  if $PYTHON_CMD -c "import spacy; spacy.load('es_core_news_md')" 2>/dev/null; then
++    echo "[OK] Modelo es_core_news_md disponible"
++  elif $PYTHON_CMD -c "import spacy; spacy.load('es_core_news_sm')" 2>/dev/null; then
++    echo "[OK] Modelo es_core_news_sm disponible"
++  else
++    echo "Descargando modelo español (es_core_news_md)..."
++    if $PYTHON_CMD -m spacy download es_core_news_md; then
++      echo "[OK] Modelo es_core_news_md instalado"
++    else
++      echo "Intentando modelo ligero (es_core_news_sm)..."
++      if $PYTHON_CMD -m spacy download es_core_news_sm; then
++        echo "[OK] Modelo es_core_news_sm instalado"
++      else
++        echo "[AVISO] No se pudo descargar el modelo español."
++        echo "        La detección de nombres no estará disponible."
++      fi
++    fi
++  fi
++fi
++
+ echo
+ echo "Iniciando Velo..."
+ $PYTHON_CMD run.py
+diff -ruN '--exclude=.git' Velo/requirements-nlp.txt Velo-patched/requirements-nlp.txt
+--- Velo/requirements-nlp.txt	1970-01-01 00:00:00.000000000 +0000
++++ Velo-patched/requirements-nlp.txt	2026-04-13 09:06:45.000000000 +0000
+@@ -0,0 +1,2 @@
++# Velo - Dependencias NLP opcionales (detección de nombres, lugares, organizaciones)
++spacy>=3.7,<4.0
+diff -ruN '--exclude=.git' Velo/run.py Velo-patched/run.py
+--- Velo/run.py	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/run.py	2026-04-13 09:19:09.185992764 +0000
+@@ -11,6 +11,7 @@
+ import threading
+ import time
+ import webbrowser
++from logging.handlers import RotatingFileHandler
+ 
+ if getattr(sys, "frozen", False):
+     BASE_DIR = os.path.dirname(sys.executable)
+@@ -19,6 +20,41 @@
+ 
+ sys.path.insert(0, BASE_DIR)
+ 
++APP_VERSION = "0.3.0"
++
++
++def setup_logging(workspace: str) -> None:
++    """Configura logging centralizado: fichero rotativo + consola."""
++    log_dir = os.path.join(workspace, "logs")
++    os.makedirs(log_dir, exist_ok=True)
++
++    log_path = os.path.join(log_dir, "velo.log")
++    file_handler = RotatingFileHandler(
++        log_path, maxBytes=5_000_000, backupCount=5, encoding="utf-8",
++    )
++    file_handler.setFormatter(logging.Formatter(
++        "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
++        datefmt="%Y-%m-%d %H:%M:%S",
++    ))
++    file_handler.setLevel(logging.DEBUG)
++
++    console_handler = logging.StreamHandler(sys.stdout)
++    console_handler.setFormatter(logging.Formatter(
++        "  %(levelname)-7s %(message)s",
++    ))
++    console_handler.setLevel(logging.WARNING)
++
++    root = logging.getLogger()
++    root.setLevel(logging.DEBUG)
++    root.addHandler(file_handler)
++    root.addHandler(console_handler)
++
++    # Silenciar loggers ruidosos de terceros
++    logging.getLogger("waitress").setLevel(logging.ERROR)
++    logging.getLogger("werkzeug").setLevel(logging.WARNING)
++
++    logging.getLogger("velo").info("Logging inicializado: %s", log_path)
++
+ 
+ def find_free_port(start=7780, end=7800):
+     for port in range(start, end):
+@@ -39,7 +75,33 @@
+         pass
+ 
+ 
++def _check_spacy() -> str:
++    """Comprueba spaCy y modelo. Devuelve texto para consola."""
++    try:
++        import spacy
++    except ImportError:
++        return "  [--] spaCy no instalado (detección de nombres desactivada)\n" \
++               "       Instale con: pip install -r requirements-nlp.txt"
++
++    for model_name in ("es_core_news_md", "es_core_news_sm"):
++        try:
++            spacy.load(model_name)
++            return f"  [OK] spaCy + modelo {model_name} (detección de nombres activa)"
++        except OSError:
++            continue
++
++    return "  [!!] spaCy instalado pero SIN modelo español\n" \
++           "       Instale con: python -m spacy download es_core_news_md"
++
++
+ def main():
++    workspace = os.path.join(BASE_DIR, "workspace")
++    os.makedirs(workspace, exist_ok=True)
++
++    # Logging antes que nada
++    setup_logging(workspace)
++    logger = logging.getLogger("velo.startup")
++
+     try:
+         from velo_engine.app import app
+     except ImportError as exc:
+@@ -60,26 +122,21 @@
+         print("\n  [ERROR] No se ha encontrado un puerto libre (7780-7800).\n")
+         sys.exit(1)
+ 
+-    workspace = os.path.join(BASE_DIR, "workspace")
+-    os.makedirs(workspace, exist_ok=True)
+-
+     app.config["WORKSPACE"] = workspace
+     app.config["PORT"] = port
+     app.config["SERVER_PID"] = os.getpid()
+ 
+     print("\n" + "=" * 55)
+-    print("  Velo - Detector de datos sensibles v0.2.5")
++    print(f"  Velo - Detector de datos sensibles v{APP_VERSION}")
+     print("=" * 55)
+     print(f"\n  Interfaz:  http://localhost:{port}")
+     print(f"  Workspace: {workspace}")
++    print(f"  Logs:      {os.path.join(workspace, 'logs', 'velo.log')}")
+     print("  Modo:      LOCAL - Ningún dato sale de tu equipo\n")
+     print("  [OK] Capa base: patrones regex")
+ 
+-    try:
+-        import spacy  # noqa: F401
+-        print("  [OK] spaCy instalado (solo se activará si hay modelo cargado)")
+-    except ImportError:
+-        print("  [--] spaCy no instalado (opcional)")
++    # spaCy / NER
++    print(_check_spacy())
+ 
+     try:
+         import docx  # noqa: F401
+@@ -114,8 +171,12 @@
+     print("  Para detener: use el botón 'Apagar' en la interfaz")
+     print("                o cierre esta ventana\n")
+ 
++    logger.info(
++        "Velo v%s iniciado en http://localhost:%d (servidor=%s)",
++        APP_VERSION, port, server_mode,
++    )
++
+     threading.Thread(target=open_browser, args=(port,), daemon=True).start()
+-    logging.getLogger("waitress").setLevel(logging.ERROR)
+ 
+     try:
+         if serve is not None:
+@@ -123,6 +184,7 @@
+         else:
+             app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
+     except Exception as exc:
++        logger.critical("El servidor se ha detenido inesperadamente: %s", exc, exc_info=True)
+         print(f"\n  [ERROR] El servidor se ha detenido: {exc}\n")
+         sys.exit(1)
+ 
+diff -ruN '--exclude=.git' Velo/velo_engine/__init__.py Velo-patched/velo_engine/__init__.py
+--- Velo/velo_engine/__init__.py	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/velo_engine/__init__.py	2026-04-13 09:22:18.911936221 +0000
+@@ -1,3 +1,3 @@
+ """Velo - Detector de datos sensibles para archiveros."""
+ 
+-__version__ = "0.2.5"
++__version__ = "0.3.0"
+diff -ruN '--exclude=.git' Velo/velo_engine/app.py Velo-patched/velo_engine/app.py
+--- Velo/velo_engine/app.py	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/velo_engine/app.py	2026-04-13 09:08:06.000000000 +0000
+@@ -4,12 +4,14 @@
+ 
+ import io
+ import json
++import logging
+ import os
+ import re
+ import shutil
+ import uuid
+ 
+ from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
++from werkzeug.exceptions import RequestEntityTooLarge
+ from werkzeug.utils import secure_filename
+ 
+ from velo_engine.detector import build_envelope, detect, spacy_status
+@@ -23,19 +25,21 @@
+     visual_capabilities,
+ )
+ 
++logger = logging.getLogger("velo.app")
++
+ app = Flask(
+     __name__,
+     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
+     static_folder=os.path.join(os.path.dirname(__file__), "static"),
+ )
+-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
++app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+ 
+ # Seguridad
+ init_security(app)
+ 
+ ALLOWED_EXTENSIONS = {".txt", ".docx", ".pdf"}
+-MAX_TEXT_LENGTH = 500_000
+-APP_VERSION = "0.2.5"
++MAX_TEXT_LENGTH = 2_000_000
++APP_VERSION = "0.3.0"
+ 
+ 
+ def _allowed_file(filename: str) -> bool:
+@@ -81,6 +85,15 @@
+         shutil.rmtree(path, ignore_errors=True)
+ 
+ 
++@app.errorhandler(RequestEntityTooLarge)
++def handle_file_too_large(exc):
++    max_mb = app.config.get("MAX_CONTENT_LENGTH", 0) / (1024 * 1024)
++    logger.warning("Fichero rechazado: excede el tamaño máximo de %.0f MB", max_mb)
++    return jsonify({
++        "error": f"El fichero excede el tamaño máximo permitido ({max_mb:.0f} MB)."
++    }), 413
++
++
+ @app.route("/")
+ def index():
+     return render_template("index.html", formats=supported_extensions(), app_version=APP_VERSION)
+@@ -121,11 +134,19 @@
+     if not file or file.filename == "":
+         return jsonify({"error": "Nombre de fichero vacío."}), 400
+     if not _allowed_file(file.filename):
++        logger.warning("Formato rechazado: %s", file.filename)
+         return jsonify({"error": "Formato no permitido. Use TXT, DOCX o PDF."}), 400
+ 
+     original_name = secure_filename(file.filename) or "document"
+     ext = os.path.splitext(original_name)[1].lower()
+ 
++    # Estimar tamaño del fichero
++    file.seek(0, 2)
++    file_size = file.tell()
++    file.seek(0)
++    file_size_mb = file_size / (1024 * 1024)
++    logger.info("Fichero recibido: %s (%.1f MB)", original_name, file_size_mb)
++
+     visual_caps = visual_capabilities()
+ 
+     if ext == ".pdf" and visual_caps.get("fitz") and visual_caps.get("pillow"):
+@@ -137,18 +158,28 @@
+         try:
+             text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
+         except Exception as exc:  # pragma: no cover - safeguard
++            logger.error(
++                "Error al preparar revisión visual: %s (fichero=%s, tamaño=%.1f MB)",
++                exc, original_name, file_size_mb, exc_info=True,
++            )
+             _cleanup_session(session_id)
+-            return jsonify({"error": "Error al preparar la revisión visual del PDF."}), 400
++            return jsonify({"error": f"Error al preparar la revisión visual del PDF: {type(exc).__name__}"}), 400
+ 
+         if error:
++            logger.warning("Error en extracción PDF visual: %s (fichero=%s)", error, original_name)
+             _cleanup_session(session_id)
+             return jsonify({"error": error}), 400
+         if not text:
++            logger.warning("Sin texto extraído de PDF visual (fichero=%s)", original_name)
+             _cleanup_session(session_id)
+             return jsonify({"error": "No se pudo extraer texto del PDF."}), 400
+         if len(text) > MAX_TEXT_LENGTH:
++            logger.warning(
++                "Texto extraído excede el límite: %d caracteres (máx: %d, fichero=%s)",
++                len(text), MAX_TEXT_LENGTH, original_name,
++            )
+             _cleanup_session(session_id)
+-            return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
++            return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
+ 
+         result = detect(text)
+         return jsonify(
+@@ -180,11 +211,17 @@
+             pass
+ 
+     if error:
++        logger.warning("Error en extracción de fichero: %s (fichero=%s)", error, original_name)
+         return jsonify({"error": error}), 400
+     if not text:
++        logger.warning("Sin texto extraído (fichero=%s)", original_name)
+         return jsonify({"error": "No se pudo extraer texto del fichero."}), 400
+     if len(text) > MAX_TEXT_LENGTH:
+-        return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
++        logger.warning(
++            "Texto extraído excede el límite: %d caracteres (máx: %d, fichero=%s)",
++            len(text), MAX_TEXT_LENGTH, original_name,
++        )
++        return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
+ 
+     log_audit("analyze_file", f"FILE={original_name} HASH={hash_text(text)}")
+     result = detect(text)
+diff -ruN '--exclude=.git' Velo/velo_engine/detector.py Velo-patched/velo_engine/detector.py
+--- Velo/velo_engine/detector.py	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/velo_engine/detector.py	2026-04-13 09:18:20.494007275 +0000
+@@ -4,9 +4,12 @@
+ Capa opcional: spaCy para NER (nombres, lugares, instituciones).
+ """
+ 
++import logging
+ import re
+ from datetime import datetime
+ 
++logger = logging.getLogger("velo.detector")
++
+ PATTERNS = [
+     {
+         "id": "dni",
+@@ -193,9 +196,12 @@
+ 
+     for model_name in ("es_core_news_md", "es_core_news_sm"):
+         try:
+-            return spacy.load(model_name), model_name
++            nlp = spacy.load(model_name)
++            logger.info("Modelo spaCy cargado: %s", model_name)
++            return nlp, model_name
+         except OSError:
+             continue
++    logger.warning("spaCy instalado pero sin modelo español (es_core_news_md / es_core_news_sm)")
+     return None, None
+ 
+ 
+@@ -243,7 +249,10 @@
+ 
+ def detect(text):
+     findings = detect_regex(text)
++    logger.info("Capa regex: %d hallazgos en %d caracteres", len(findings), len(text))
+     ner_findings, model_name = detect_ner(text, findings)
++    if model_name:
++        logger.info("Capa NER (%s): %d hallazgos adicionales", model_name, len(ner_findings))
+     findings.extend(ner_findings)
+     findings.sort(key=lambda item: item["position"]["start"])
+ 
+@@ -273,7 +282,7 @@
+         "document_id": document_id,
+         "analysis_date": now,
+         "tool": "velo",
+-        "version": "0.2.5",
++        "version": "0.3.0",
+         "method": "regex+ner" if "spacy_ner" in layers_active else "regex",
+         "layers_active": layers_active,
+         "layers_available": layers_available,
+@@ -314,7 +323,7 @@
+         "audit": {
+             "reviewed_by": "archivero",
+             "review_date": now.split("T")[0],
+-            "tool_version": "0.2.5",
++            "tool_version": "0.3.0",
+             "execution": "local",
+             "standards_applied": ["ISO/IEC 27038", "ISO/IEC 20889", "ISO/IEC 27559", "ISO/IEC 29100"],
+         },
+diff -ruN '--exclude=.git' Velo/velo_engine/security.py Velo-patched/velo_engine/security.py
+--- Velo/velo_engine/security.py	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/velo_engine/security.py	2026-04-13 09:06:50.000000000 +0000
+@@ -27,7 +27,7 @@
+ # ── Constantes ───────────────────────────────────────────
+ RATE_LIMIT_WINDOW = 60
+ RATE_LIMIT_MAX = 30
+-MAX_PDF_PAGES = 100
++MAX_PDF_PAGES = 500
+ 
+ 
+ # ── Rate limiter ─────────────────────────────────────────
+diff -ruN '--exclude=.git' Velo/velo_engine/visual.py Velo-patched/velo_engine/visual.py
+--- Velo/velo_engine/visual.py	2026-04-13 08:57:53.000000000 +0000
++++ Velo-patched/velo_engine/visual.py	2026-04-13 09:07:16.000000000 +0000
+@@ -10,10 +10,13 @@
+ from __future__ import annotations
+ 
+ import json
++import logging
+ import os
+ from collections import defaultdict
+ from typing import Dict, Iterable, List, Tuple
+ 
++logger = logging.getLogger("velo.visual")
++
+ # Proteccion contra bombas de descompresion
+ try:
+     from PIL import Image as _PilImage
+@@ -21,7 +24,7 @@
+ except ImportError:
+     pass
+ 
+-MAX_PDF_PAGES_VISUAL = 100
++MAX_PDF_PAGES_VISUAL = 500
+ 
+ 
+ TEXT_RENDER_SCALE = 2.0
+@@ -181,15 +184,25 @@
+ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str) -> Tuple[str, str, str | None, dict | None]:
+     caps = visual_capabilities()
+     if not caps["fitz"]:
++        logger.warning("Revisión visual no disponible: falta PyMuPDF (fitz)")
+         return None, "pdf", "La revisión visual de PDF requiere PyMuPDF (fitz).", None
+ 
+     import fitz
+ 
++    file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
++    logger.info("Procesando PDF: %.1f MB, sesión=%s", file_size_mb, session_id)
++
+     assets_dir = _ensure_dirs(session_dir)
+     document = fitz.open(filepath)
+     if document.page_count > MAX_PDF_PAGES_VISUAL:
++        logger.warning(
++            "PDF rechazado por exceso de páginas: %d (máx: %d), tamaño=%.1f MB, sesión=%s",
++            document.page_count, MAX_PDF_PAGES_VISUAL, file_size_mb, session_id,
++        )
+         document.close()
+         return None, "pdf", f"PDF con {document.page_count} paginas. Maximo: {MAX_PDF_PAGES_VISUAL}.", None
++
++    logger.info("PDF abierto: %d páginas, %.1f MB, sesión=%s", document.page_count, file_size_mb, session_id)
+     pages = []
+     parts: List[str] = []
+     global_offset = 0
+@@ -241,6 +254,10 @@
+     document.close()
+ 
+     if not any_words:
++        logger.warning(
++            "PDF sin texto extraíble: %d páginas, %.1f MB, sesión=%s. Sugerencia: instalar Tesseract OCR.",
++            document.page_count, file_size_mb, session_id,
++        )
+         return (
+             None,
+             "pdf",
+@@ -249,6 +266,12 @@
+         )
+ 
+     text = "".join(parts)
++    logger.info(
++        "PDF procesado correctamente: %d páginas, %d caracteres, modo=%s, sesión=%s",
++        len(pages), len(text),
++        "hybrid" if used_ocr and used_text_layer else ("ocr" if used_ocr else "text_layer"),
++        session_id,
++    )
+     metadata = {
+         "session_id": session_id,
+         "pages": pages,

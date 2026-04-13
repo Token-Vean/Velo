@@ -4,8 +4,11 @@ Capa base: regex para patrones estructurados españoles.
 Capa opcional: spaCy para NER (nombres, lugares, instituciones).
 """
 
+import logging
 import re
 from datetime import datetime
+
+logger = logging.getLogger("velo.detector")
 
 PATTERNS = [
     {
@@ -193,9 +196,12 @@ def _load_spacy_model():
 
     for model_name in ("es_core_news_md", "es_core_news_sm"):
         try:
-            return spacy.load(model_name), model_name
+            nlp = spacy.load(model_name)
+            logger.info("Modelo spaCy cargado: %s", model_name)
+            return nlp, model_name
         except OSError:
             continue
+    logger.warning("spaCy instalado pero sin modelo español (es_core_news_md / es_core_news_sm)")
     return None, None
 
 
@@ -243,7 +249,10 @@ def detect_ner(text, existing_findings=None):
 
 def detect(text):
     findings = detect_regex(text)
+    logger.info("Capa regex: %d hallazgos en %d caracteres", len(findings), len(text))
     ner_findings, model_name = detect_ner(text, findings)
+    if model_name:
+        logger.info("Capa NER (%s): %d hallazgos adicionales", model_name, len(ner_findings))
     findings.extend(ner_findings)
     findings.sort(key=lambda item: item["position"]["start"])
 
@@ -273,7 +282,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         "document_id": document_id,
         "analysis_date": now,
         "tool": "velo",
-        "version": "0.2.5",
+        "version": "0.3.0",
         "method": "regex+ner" if "spacy_ner" in layers_active else "regex",
         "layers_active": layers_active,
         "layers_available": layers_available,
@@ -314,7 +323,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         "audit": {
             "reviewed_by": "archivero",
             "review_date": now.split("T")[0],
-            "tool_version": "0.2.5",
+            "tool_version": "0.3.0",
             "execution": "local",
             "standards_applied": ["ISO/IEC 27038", "ISO/IEC 20889", "ISO/IEC 27559", "ISO/IEC 29100"],
         },

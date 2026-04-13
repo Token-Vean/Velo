@@ -1,0 +1,2 @@
+# Velo - Dependencias NLP opcionales (detección de nombres, lugares, organizaciones)
+spacy>=3.7,<4.0

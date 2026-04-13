@@ -10,9 +10,12 @@ redacciones sobre una copia del original y la exportación posterior.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
+
+logger = logging.getLogger("velo.visual")
 
 # Proteccion contra bombas de descompresion
 try:
@@ -21,7 +24,7 @@ try:
 except ImportError:
     pass
 
-MAX_PDF_PAGES_VISUAL = 100
+MAX_PDF_PAGES_VISUAL = 500
 
 
 TEXT_RENDER_SCALE = 2.0
@@ -181,15 +184,25 @@ def _page_text_and_map(words: Iterable[dict], global_offset: int, page_number: i
 def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str) -> Tuple[str, str, str | None, dict | None]:
     caps = visual_capabilities()
     if not caps["fitz"]:
+        logger.warning("Revisión visual no disponible: falta PyMuPDF (fitz)")
         return None, "pdf", "La revisión visual de PDF requiere PyMuPDF (fitz).", None
 
     import fitz
 
+    file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+    logger.info("Procesando PDF: %.1f MB, sesión=%s", file_size_mb, session_id)
+
     assets_dir = _ensure_dirs(session_dir)
     document = fitz.open(filepath)
     if document.page_count > MAX_PDF_PAGES_VISUAL:
+        logger.warning(
+            "PDF rechazado por exceso de páginas: %d (máx: %d), tamaño=%.1f MB, sesión=%s",
+            document.page_count, MAX_PDF_PAGES_VISUAL, file_size_mb, session_id,
+        )
         document.close()
         return None, "pdf", f"PDF con {document.page_count} paginas. Maximo: {MAX_PDF_PAGES_VISUAL}.", None
+
+    logger.info("PDF abierto: %d páginas, %.1f MB, sesión=%s", document.page_count, file_size_mb, session_id)
     pages = []
     parts: List[str] = []
     global_offset = 0
@@ -241,6 +254,10 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
     document.close()
 
     if not any_words:
+        logger.warning(
+            "PDF sin texto extraíble: %d páginas, %.1f MB, sesión=%s. Sugerencia: instalar Tesseract OCR.",
+            document.page_count, file_size_mb, session_id,
+        )
         return (
             None,
             "pdf",
@@ -249,6 +266,12 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
         )
 
     text = "".join(parts)
+    logger.info(
+        "PDF procesado correctamente: %d páginas, %d caracteres, modo=%s, sesión=%s",
+        len(pages), len(text),
+        "hybrid" if used_ocr and used_text_layer else ("ocr" if used_ocr else "text_layer"),
+        session_id,
+    )
     metadata = {
         "session_id": session_id,
         "pages": pages,

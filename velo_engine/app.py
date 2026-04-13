@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import os
 import re
 import shutil
 import uuid
 
 from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from velo_engine.detector import build_envelope, detect, spacy_status
@@ -23,19 +25,21 @@ from velo_engine.visual import (
     visual_capabilities,
 )
 
+logger = logging.getLogger("velo.app")
+
 app = Flask(
     __name__,
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
     static_folder=os.path.join(os.path.dirname(__file__), "static"),
 )
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
 # Seguridad
 init_security(app)
 
 ALLOWED_EXTENSIONS = {".txt", ".docx", ".pdf"}
-MAX_TEXT_LENGTH = 500_000
-APP_VERSION = "0.2.5"
+MAX_TEXT_LENGTH = 2_000_000
+APP_VERSION = "0.3.0"
 
 
 def _allowed_file(filename: str) -> bool:
@@ -81,6 +85,15 @@ def _cleanup_session(session_id: str | None) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+@app.errorhandler(RequestEntityTooLarge)
+def handle_file_too_large(exc):
+    max_mb = app.config.get("MAX_CONTENT_LENGTH", 0) / (1024 * 1024)
+    logger.warning("Fichero rechazado: excede el tamaño máximo de %.0f MB", max_mb)
+    return jsonify({
+        "error": f"El fichero excede el tamaño máximo permitido ({max_mb:.0f} MB)."
+    }), 413
+
+
 @app.route("/")
 def index():
     return render_template("index.html", formats=supported_extensions(), app_version=APP_VERSION)
@@ -121,10 +134,18 @@ def analyze_file():
     if not file or file.filename == "":
         return jsonify({"error": "Nombre de fichero vacío."}), 400
     if not _allowed_file(file.filename):
+        logger.warning("Formato rechazado: %s", file.filename)
         return jsonify({"error": "Formato no permitido. Use TXT, DOCX o PDF."}), 400
 
     original_name = secure_filename(file.filename) or "document"
     ext = os.path.splitext(original_name)[1].lower()
+
+    # Estimar tamaño del fichero
+    file.seek(0, 2)
+    file_size = file.tell()
+    file.seek(0)
+    file_size_mb = file_size / (1024 * 1024)
+    logger.info("Fichero recibido: %s (%.1f MB)", original_name, file_size_mb)
 
     visual_caps = visual_capabilities()
 
@@ -137,18 +158,28 @@ def analyze_file():
         try:
             text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
         except Exception as exc:  # pragma: no cover - safeguard
+            logger.error(
+                "Error al preparar revisión visual: %s (fichero=%s, tamaño=%.1f MB)",
+                exc, original_name, file_size_mb, exc_info=True,
+            )
             _cleanup_session(session_id)
-            return jsonify({"error": "Error al preparar la revisión visual del PDF."}), 400
+            return jsonify({"error": f"Error al preparar la revisión visual del PDF: {type(exc).__name__}"}), 400
 
         if error:
+            logger.warning("Error en extracción PDF visual: %s (fichero=%s)", error, original_name)
             _cleanup_session(session_id)
             return jsonify({"error": error}), 400
         if not text:
+            logger.warning("Sin texto extraído de PDF visual (fichero=%s)", original_name)
             _cleanup_session(session_id)
             return jsonify({"error": "No se pudo extraer texto del PDF."}), 400
         if len(text) > MAX_TEXT_LENGTH:
+            logger.warning(
+                "Texto extraído excede el límite: %d caracteres (máx: %d, fichero=%s)",
+                len(text), MAX_TEXT_LENGTH, original_name,
+            )
             _cleanup_session(session_id)
-            return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
+            return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
         result = detect(text)
         return jsonify(
@@ -180,11 +211,17 @@ def analyze_file():
             pass
 
     if error:
+        logger.warning("Error en extracción de fichero: %s (fichero=%s)", error, original_name)
         return jsonify({"error": error}), 400
     if not text:
+        logger.warning("Sin texto extraído (fichero=%s)", original_name)
         return jsonify({"error": "No se pudo extraer texto del fichero."}), 400
     if len(text) > MAX_TEXT_LENGTH:
-        return jsonify({"error": f"Texto extraído demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
+        logger.warning(
+            "Texto extraído excede el límite: %d caracteres (máx: %d, fichero=%s)",
+            len(text), MAX_TEXT_LENGTH, original_name,
+        )
+        return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
     log_audit("analyze_file", f"FILE={original_name} HASH={hash_text(text)}")
     result = detect(text)

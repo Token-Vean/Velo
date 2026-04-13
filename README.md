@@ -4,7 +4,7 @@ Herramienta local para archiveros y profesionales de la gestión documental orie
 
 ## Estado del proyecto
 
-Versión actual del código: **0.2.5**.
+Versión actual del código: **0.3.0**.
 
 El proyecto es funcional para revisión local y generación de copias derivadas redactadas. No debe presentarse como certificación de cumplimiento normativo automático ni como sustituto de una revisión archivística, jurídica o de protección de datos.
 
@@ -26,13 +26,21 @@ El proyecto es funcional para revisión local y generación de copias derivadas 
 
 ## Capacidades actuales
 
-### Detección base
+### Detección base (regex)
 
 - DNI y NIE con validación básica.
 - Direcciones postales por patrones.
 - Teléfonos, correos electrónicos y cuentas IBAN.
 - Números de Seguridad Social y tarjetas por patrones.
 - Marcación manual desde la interfaz.
+
+### Detección NER (spaCy, opcional)
+
+- Nombres de personas (nombres y apellidos).
+- Organizaciones e instituciones.
+- Lugares y topónimos.
+- Se activa automáticamente si spaCy y un modelo español están instalados.
+- El instalador pregunta si se desea instalar esta capa durante la primera ejecución.
 
 ### Soporte documental
 
@@ -52,6 +60,12 @@ El proyecto es funcional para revisión local y generación de copias derivadas 
 
 - Dependencias de `requirements-visual.txt`.
 - Para OCR de PDF escaneado: Tesseract OCR instalado en el sistema y disponible en `PATH`.
+
+### Detección de nombres (NLP, opcional)
+
+- Dependencias de `requirements-nlp.txt` (spaCy).
+- Modelo español: `python -m spacy download es_core_news_md`.
+- El instalador pregunta durante la primera ejecución si se desea instalar esta capa.
 
 ## Instalación
 
@@ -76,7 +90,9 @@ chmod +x install.sh
 
 ```bash
 python -m pip install -r requirements.txt
-python -m pip install -r requirements-visual.txt  # opcional
+python -m pip install -r requirements-visual.txt  # opcional: revisión visual PDF
+python -m pip install -r requirements-nlp.txt     # opcional: detección de nombres
+python -m spacy download es_core_news_md          # opcional: modelo español para NER
 python run.py
 ```
 
@@ -96,6 +112,7 @@ velo/
 ├── install.command
 ├── install.sh
 ├── requirements.txt
+├── requirements-nlp.txt
 ├── requirements-visual.txt
 ├── run.py
 └── velo_engine/
