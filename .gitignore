@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+workspace/
+.env
+*.log
+dist/
+build/
+*.egg-info/
+.DS_Store
+Thumbs.db
