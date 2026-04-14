@@ -10,13 +10,13 @@ import re
 import shutil
 import uuid
 
-from flask import Flask, jsonify, render_template, request, send_file, send_from_directory
+from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 from velo_engine.detector import build_envelope, detect, spacy_status
 from velo_engine.reader import read_file, supported_extensions
-from velo_engine.security import init_security, log_audit, hash_text, MAX_PDF_PAGES
+from velo_engine.security import init_security, log_audit, hash_text
 from velo_engine.visual import (
     apply_redactions_to_original,
     export_visual_redacted_pdf,
@@ -96,7 +96,12 @@ def handle_file_too_large(exc):
 
 @app.route("/")
 def index():
-    return render_template("index.html", formats=supported_extensions(), app_version=APP_VERSION)
+    return render_template(
+        "index.html",
+        formats=supported_extensions(),
+        app_version=APP_VERSION,
+        csrf_token=getattr(g, "csrf_token", ""),
+    )
 
 
 @app.route("/api/analyze/text", methods=["POST"])
@@ -157,13 +162,14 @@ def analyze_file():
 
         try:
             text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
-        except Exception as exc:  # pragma: no cover - safeguard
-            logger.error(
-                "Error al preparar revisión visual: %s (fichero=%s, tamaño=%.1f MB)",
-                exc, original_name, file_size_mb, exc_info=True,
+        except Exception:
+            logger.exception(
+                "Error al preparar revisión visual (fichero=%s, tamaño=%.1f MB)",
+                original_name,
+                file_size_mb,
             )
             _cleanup_session(session_id)
-            return jsonify({"error": f"Error al preparar la revisión visual del PDF: {type(exc).__name__}"}), 400
+            return jsonify({"error": "Error al preparar la revisión visual del PDF."}), 400
 
         if error:
             logger.warning("Error en extracción PDF visual: %s (fichero=%s)", error, original_name)
@@ -284,7 +290,8 @@ def apply_original_redactions():
     session_dir = _session_dir(session_id)
     try:
         applied = apply_redactions_to_original(session_dir, session_id, findings)
-    except Exception as exc:
+    except Exception:
+        logger.exception("No se pudo aplicar la edición sobre el original")
         return jsonify({"error": "No se pudo aplicar la edición sobre el original."}), 400
 
     return jsonify({"success": True, "applied": applied})
@@ -335,7 +342,8 @@ def export_redacted_pdf():
 
     try:
         export_visual_redacted_pdf(session_dir, findings, output_path)
-    except Exception as exc:
+    except Exception:
+        logger.exception("No se pudo exportar el PDF visual")
         return jsonify({"error": "No se pudo exportar el PDF visual."}), 400
 
     with open(output_path, "rb") as handle:
@@ -354,7 +362,7 @@ def serve_session_asset(session_id, filename):
     safe_file = os.path.basename(filename)
     session_dir = _session_dir(safe_id)
     assets_dir = os.path.join(session_dir, "assets")
-    # Solo servir imagenes PNG
+    # Solo servir imágenes PNG
     if not safe_file.endswith(".png"):
         return jsonify({"error": "Tipo de asset no permitido."}), 403
     return send_from_directory(assets_dir, safe_file)
@@ -388,7 +396,7 @@ def status():
                 "fitz": visual.get("fitz"),
                 "pillow": visual.get("pillow"),
                 "ocr": visual.get("tesseract_ready"),
-                "note": "La revisión visual de PDF usa la imagen original por página y coordena los tachados con la base textual/OCR de esa misma sesión.",
+                "note": "La revisión visual de PDF usa la imagen original por página y coordina los tachados con la base textual/OCR de esa misma sesión.",
             },
         }
     )
@@ -408,7 +416,6 @@ def shutdown():
         # Limpiar sesiones temporales
         try:
             sessions_root = _sessions_root()
-            import shutil
             for name in os.listdir(sessions_root):
                 path = os.path.join(sessions_root, name)
                 if os.path.isdir(path):
