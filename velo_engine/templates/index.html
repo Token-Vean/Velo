@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>Velo</title>
     <style>
         :root {
@@ -410,6 +411,19 @@
 <script>
 const CATEGORY_COLORS = { identification: "#DC2626", contact: "#2563EB", financial: "#7C3AED", personal: "#059669", health: "#DB2777" };
 const CATEGORY_LABELS = { identification: "Identificación", contact: "Contacto", financial: "Financiero", personal: "Personal", health: "Salud" };
+const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+
+function apiFetch(url, options = {}) {
+    const opts = { credentials: "same-origin", ...options };
+    const method = (opts.method || "GET").toUpperCase();
+    opts.headers = { ...(opts.headers || {}) };
+
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        opts.headers["X-CSRF-Token"] = CSRF_TOKEN;
+    }
+
+    return fetch(url, opts);
+}
 
 let currentStep = 0;
 let documentText = "";
@@ -425,6 +439,7 @@ let visualPages = [];
 let visualAvailable = false;
 let visualMode = null;
 let visualOcrUsed = false;
+let visualReason = "";
 let currentFormat = "txt";
 let appliedOriginal = null;
 let appliedSignature = null;
@@ -510,7 +525,7 @@ function escapeHtml(text) {
 async function cleanupVisualSession() {
     if (!visualSession) return;
     try {
-        await fetch("/api/session/cleanup", {
+        await apiFetch("/api/session/cleanup", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session_id: visualSession })
@@ -521,6 +536,7 @@ async function cleanupVisualSession() {
     visualAvailable = false;
     visualMode = null;
     visualOcrUsed = false;
+    visualReason = "";
     appliedOriginal = null;
     appliedSignature = null;
     applyingOriginal = false;
@@ -565,9 +581,9 @@ async function analyze() {
         if (selectedFile) {
             const fd = new FormData();
             fd.append("file", selectedFile);
-            response = await fetch("/api/analyze/file", { method: "POST", body: fd });
+            response = await apiFetch("/api/analyze/file", { method: "POST", body: fd });
         } else {
-            response = await fetch("/api/analyze/text", {
+            response = await apiFetch("/api/analyze/text", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ text: document.getElementById("textInput").value })
@@ -587,6 +603,7 @@ async function analyze() {
         visualAvailable = Boolean(data.visual_available && visualSession && visualPages.length);
         visualMode = data.visual_mode || null;
         visualOcrUsed = Boolean(data.visual_ocr_used);
+        visualReason = data.visual_reason || "";
         appliedOriginal = null;
         appliedSignature = null;
         applyingOriginal = false;
@@ -901,7 +918,7 @@ async function applyOriginalEdits(button) {
     }
     updateStepUI();
     try {
-        const response = await fetch("/api/session/apply-original", {
+        const response = await apiFetch("/api/session/apply-original", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ session_id: visualSession, findings })
@@ -1045,7 +1062,7 @@ function checkCompliance() {
 async function saveJSON(button) {
     try {
         const envelope = buildEnvelope();
-        const response = await fetch("/api/export", {
+        const response = await apiFetch("/api/export", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
@@ -1109,7 +1126,7 @@ async function downloadAppliedOriginal(button) {
         return;
     }
     try {
-        const response = await fetch(`/api/session/${visualSession}/applied-original-pdf`);
+        const response = await apiFetch(`/api/session/${visualSession}/applied-original-pdf`);
         if (!response.ok) {
             let message = "No se pudo descargar el original editado.";
             try {
@@ -1168,7 +1185,7 @@ async function resetAll() {
 
 function shutdownServer() {
     if (!confirm("Se va a apagar Velo. Los datos no guardados se perderán.\n\n¿Desea continuar?")) return;
-    fetch("/api/shutdown", { method: "POST" }).finally(() => {
+    apiFetch("/api/shutdown", { method: "POST" }).finally(() => {
         document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:Segoe UI,system-ui,sans-serif;"><div><h2>Velo se ha apagado</h2><p style="color:#57534E">Puede cerrar esta ventana.</p></div></div>';
     });
 }
@@ -1192,7 +1209,7 @@ document.addEventListener("DOMContentLoaded", () => {
         const popup = document.getElementById("selectionPopup");
         if (!popup.contains(event.target) && !event.target.closest(".doc-view")) hidePopup();
     });
-    fetch("/api/status")
+    apiFetch("/api/status")
         .then(r => r.json())
         .then(d => {
             let label = "LOCAL";
