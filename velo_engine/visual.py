@@ -55,13 +55,13 @@ def visual_capabilities() -> dict:
         import fitz  # noqa: F401
         caps["fitz"] = True
     except Exception as exc:  # noqa: BLE001
-        logger.debug("PyMuPDF no disponible: %s", exc, exc_info=True)
+        logger.debug("PyMuPDF no disponible para revisión visual: %s", exc, exc_info=True)
         caps["fitz"] = False
     try:
         from PIL import Image  # noqa: F401
         caps["pillow"] = True
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Pillow no disponible: %s", exc, exc_info=True)
+        logger.debug("Pillow no disponible para revisión visual: %s", exc, exc_info=True)
         caps["pillow"] = False
     try:
         import pytesseract  # noqa: F401
@@ -76,6 +76,7 @@ def visual_capabilities() -> dict:
     except Exception as exc:  # noqa: BLE001
         logger.debug("pytesseract no disponible: %s", exc, exc_info=True)
         caps["pytesseract"] = False
+        caps["tesseract_ready"] = False
     return caps
 
 

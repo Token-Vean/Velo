@@ -79,19 +79,25 @@ def find_free_port(start: int = 7780, end: int = 7801) -> int | None:
 
 
 def open_browser_when_ready(port: int, timeout: float = 20.0) -> None:
+    logger = logging.getLogger("velo.startup")
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=0.5):
                 webbrowser.open(f"http://localhost:{port}")
                 return
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug(
+                "El navegador aun no puede abrirse o el puerto no esta listo: %s",
+                exc,
+                exc_info=True,
+            )
             time.sleep(0.25)
     try:
         webbrowser.open(f"http://localhost:{port}")
     except Exception as exc:  # noqa: BLE001
-        logging.getLogger("velo.startup").debug(
-            "No se pudo abrir el navegador automáticamente: %s",
+        logger.debug(
+            "No se pudo abrir el navegador automaticamente tras agotar la espera: %s",
             exc,
             exc_info=True,
         )

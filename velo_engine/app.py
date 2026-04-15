@@ -459,7 +459,7 @@ def shutdown():
                     shutil.rmtree(path, ignore_errors=True)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "Error al limpiar sesiones durante el apagado: %s",
+                "Error no fatal al limpiar sesiones durante el apagado: %s",
                 exc,
                 exc_info=True,
             )
