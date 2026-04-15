@@ -457,8 +457,12 @@ def shutdown():
                 path = os.path.join(sessions_root, name)
                 if os.path.isdir(path):
                     shutil.rmtree(path, ignore_errors=True)
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Error al limpiar sesiones durante el apagado: %s",
+                exc,
+                exc_info=True,
+            )
         time.sleep(0.5)
         os.kill(pid, signal.SIGINT)
 

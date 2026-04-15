@@ -54,13 +54,15 @@ def visual_capabilities() -> dict:
     try:
         import fitz  # noqa: F401
         caps["fitz"] = True
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("PyMuPDF no disponible: %s", exc, exc_info=True)
+        caps["fitz"] = False
     try:
         from PIL import Image  # noqa: F401
         caps["pillow"] = True
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("Pillow no disponible: %s", exc, exc_info=True)
+        caps["pillow"] = False
     try:
         import pytesseract  # noqa: F401
         caps["pytesseract"] = True
@@ -68,10 +70,12 @@ def visual_capabilities() -> dict:
             import pytesseract as _pt
             _pt.get_tesseract_version()
             caps["tesseract_ready"] = True
-        except Exception:
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("Tesseract no disponible o no operativo: %s", exc, exc_info=True)
             caps["tesseract_ready"] = False
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("pytesseract no disponible: %s", exc, exc_info=True)
+        caps["pytesseract"] = False
     return caps
 
 

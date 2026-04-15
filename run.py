@@ -89,8 +89,12 @@ def open_browser_when_ready(port: int, timeout: float = 20.0) -> None:
             time.sleep(0.25)
     try:
         webbrowser.open(f"http://localhost:{port}")
-    except Exception:
-        pass
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("velo.startup").debug(
+            "No se pudo abrir el navegador automáticamente: %s",
+            exc,
+            exc_info=True,
+        )
 
 
 def _probe_spacy_safe() -> str:
