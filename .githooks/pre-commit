@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+blocked='(^workspace/)|(^\.env$)|(^\.venv/)|(^.*\.log$)|(^.*original\.pdf$)|(^.*visual\.json$)|(^.*page_[0-9]+\.png$)'
+files=$(git diff --cached --name-only --diff-filter=ACMR)
+
+if echo "$files" | grep -E "$blocked" >/dev/null 2>&1; then
+  echo "[ERROR] Se ha detectado un intento de commit de archivos sensibles o de uso local."
+  echo "Revise el staging e ignore workspace/, .env, .venv, logs, original.pdf, visual.json y page_*.png."
+  exit 1
+fi

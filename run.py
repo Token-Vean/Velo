@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 import socket
 import sys
 import threading
 import time
 import webbrowser
 from logging.handlers import RotatingFileHandler
+
+from velo_engine.constants import APP_NAME, APP_VERSION, MIN_PYTHON, SESSION_TTL_HOURS
 
 if getattr(sys, "frozen", False):
     BASE_DIR = os.path.dirname(sys.executable)
@@ -22,7 +25,13 @@ else:
 
 sys.path.insert(0, BASE_DIR)
 
-APP_VERSION = "0.3.0"
+
+def ensure_min_python() -> None:
+    if sys.version_info < MIN_PYTHON:
+        required = ".".join(str(part) for part in MIN_PYTHON)
+        current = ".".join(str(part) for part in sys.version_info[:3])
+        print(f"\n  [ERROR] {APP_NAME} requiere Python {required}+ (actual: {current}).\n")
+        sys.exit(1)
 
 
 def setup_logging(workspace: str) -> None:
@@ -58,7 +67,7 @@ def setup_logging(workspace: str) -> None:
     logging.getLogger("velo").info("Logging inicializado: %s", log_path)
 
 
-def find_free_port(start: int = 7780, end: int = 7800) -> int | None:
+def find_free_port(start: int = 7780, end: int = 7801) -> int | None:
     for port in range(start, end):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -125,7 +134,30 @@ def _log_optional_components() -> None:
         logger.warning("Fallo no fatal al comprobar spaCy: %s", exc, exc_info=True)
 
 
+def prune_stale_sessions(workspace: str, ttl_hours: int = SESSION_TTL_HOURS) -> int:
+    sessions_root = os.path.join(workspace, "sessions")
+    os.makedirs(sessions_root, exist_ok=True)
+
+    cutoff = time.time() - ttl_hours * 3600
+    removed = 0
+
+    for name in os.listdir(sessions_root):
+        path = os.path.join(sessions_root, name)
+        if not os.path.isdir(path):
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime < cutoff:
+            shutil.rmtree(path, ignore_errors=True)
+            removed += 1
+    return removed
+
+
 def main() -> None:
+    ensure_min_python()
+
     workspace = os.path.join(BASE_DIR, "workspace")
     os.makedirs(workspace, exist_ok=True)
 
@@ -136,7 +168,8 @@ def main() -> None:
         from velo_engine.app import app
     except ImportError as exc:
         print(f"\n  [ERROR] Falta una dependencia: {exc}")
-        print("  Ejecute: pip install -r requirements.txt\n")
+        print("  Ejecute el instalador o active el entorno virtual y use:")
+        print("  python -m pip install -r requirements.txt\n")
         sys.exit(1)
 
     server_mode = "waitress"
@@ -156,13 +189,19 @@ def main() -> None:
     app.config["PORT"] = port
     app.config["SERVER_PID"] = os.getpid()
 
+    removed = prune_stale_sessions(workspace)
+
     print("\n" + "=" * 55)
-    print(f"  Velo - Detector de datos sensibles v{APP_VERSION}")
+    print(f"  {APP_NAME} - Detector de datos sensibles v{APP_VERSION}")
     print("=" * 55)
     print(f"\n  Interfaz:  http://localhost:{port}")
     print(f"  Workspace: {workspace}")
     print(f"  Logs:      {os.path.join(workspace, 'logs', 'velo.log')}")
     print("  Modo:      LOCAL - Ningún dato sale de tu equipo\n")
+
+    if removed:
+        print(f"  [OK] Sesiones visuales antiguas eliminadas: {removed}")
+
     print("  [OK] Capa base: patrones regex")
     print("  [..] Comprobando spaCy de forma segura (si falla, Velo seguirá arrancando)")
 
@@ -173,7 +212,7 @@ def main() -> None:
         print("  [--] Sin soporte DOCX")
 
     try:
-        import PyPDF2  # noqa: F401
+        import pypdf  # noqa: F401
         print("  [OK] Soporte PDF")
     except Exception:
         print("  [--] Sin soporte PDF")
@@ -200,7 +239,8 @@ def main() -> None:
     print("                o cierre esta ventana\n")
 
     logger.info(
-        "Velo v%s iniciado en http://localhost:%d (servidor=%s)",
+        "%s v%s iniciado en http://localhost:%d (servidor=%s)",
+        APP_NAME,
         APP_VERSION,
         port,
         server_mode,

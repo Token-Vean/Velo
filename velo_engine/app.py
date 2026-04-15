@@ -8,12 +8,19 @@ import logging
 import os
 import re
 import shutil
+import time
 import uuid
 
 from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
+from velo_engine.constants import (
+    APP_VERSION,
+    MAX_CONTENT_LENGTH,
+    MAX_TEXT_LENGTH,
+    SESSION_TTL_HOURS,
+)
 from velo_engine.detector import build_envelope, detect, spacy_status
 from velo_engine.reader import read_file, supported_extensions
 from velo_engine.security import init_security, log_audit, hash_text
@@ -32,14 +39,12 @@ app = Flask(
     template_folder=os.path.join(os.path.dirname(__file__), "templates"),
     static_folder=os.path.join(os.path.dirname(__file__), "static"),
 )
-app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 # Seguridad
 init_security(app)
 
 ALLOWED_EXTENSIONS = {".txt", ".docx", ".pdf"}
-MAX_TEXT_LENGTH = 2_000_000
-APP_VERSION = "0.3.0"
 
 
 def _allowed_file(filename: str) -> bool:
@@ -63,14 +68,15 @@ def _sessions_root() -> str:
     return root
 
 
-def _session_dir(session_id: str) -> str:
+def _session_dir(session_id: str, *, create: bool = True) -> str:
     safe_id = _sanitize_id(session_id)
     if not safe_id:
         raise ValueError("session_id inválido")
     directory = os.path.abspath(os.path.join(_sessions_root(), safe_id))
     if not directory.startswith(_sessions_root()):
         raise ValueError("Ruta de sesión inválida")
-    os.makedirs(directory, exist_ok=True)
+    if create:
+        os.makedirs(directory, exist_ok=True)
     return directory
 
 
@@ -83,6 +89,25 @@ def _cleanup_session(session_id: str | None) -> None:
     path = os.path.abspath(os.path.join(_sessions_root(), safe_id))
     if path.startswith(_sessions_root()) and os.path.isdir(path):
         shutil.rmtree(path, ignore_errors=True)
+
+
+def prune_stale_sessions(ttl_hours: int = SESSION_TTL_HOURS) -> int:
+    cutoff = time.time() - ttl_hours * 3600
+    removed = 0
+
+    for name in os.listdir(_sessions_root()):
+        path = os.path.join(_sessions_root(), name)
+        if not os.path.isdir(path):
+            continue
+        try:
+            mtime = os.path.getmtime(path)
+        except OSError:
+            continue
+        if mtime < cutoff:
+            shutil.rmtree(path, ignore_errors=True)
+            removed += 1
+
+    return removed
 
 
 @app.errorhandler(RequestEntityTooLarge)
@@ -145,7 +170,6 @@ def analyze_file():
     original_name = secure_filename(file.filename) or "document"
     ext = os.path.splitext(original_name)[1].lower()
 
-    # Estimar tamaño del fichero
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
@@ -187,6 +211,7 @@ def analyze_file():
             _cleanup_session(session_id)
             return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
+        log_audit("analyze_file", f"FILE={original_name} HASH={hash_text(text)} MODE=visual")
         result = detect(text)
         return jsonify(
             {
@@ -287,7 +312,9 @@ def apply_original_redactions():
     if not isinstance(findings, list):
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
-    session_dir = _session_dir(session_id)
+    session_dir = _session_dir(session_id, create=False)
+    if not os.path.isdir(session_dir):
+        return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
     try:
         applied = apply_redactions_to_original(session_dir, session_id, findings)
     except Exception:
@@ -302,7 +329,9 @@ def download_applied_original_pdf(session_id):
     safe_id = _sanitize_id(session_id)
     if not safe_id:
         return jsonify({"error": "Sesión inválida."}), 400
-    session_dir = _session_dir(safe_id)
+    session_dir = _session_dir(safe_id, create=False)
+    if not os.path.isdir(session_dir):
+        return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
     try:
         applied = load_applied_metadata(session_dir)
     except Exception:
@@ -336,7 +365,9 @@ def export_redacted_pdf():
     if not isinstance(findings, list):
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
-    session_dir = _session_dir(session_id)
+    session_dir = _session_dir(session_id, create=False)
+    if not os.path.isdir(session_dir):
+        return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
     output_name = f"{document_id or 'DOC'}_visual_redacted.pdf"
     output_path = os.path.join(session_dir, output_name)
 
@@ -360,9 +391,17 @@ def export_redacted_pdf():
 def serve_session_asset(session_id, filename):
     safe_id = _sanitize_id(session_id)
     safe_file = os.path.basename(filename)
-    session_dir = _session_dir(safe_id)
+    if not safe_id:
+        return jsonify({"error": "Sesión inválida."}), 400
+
+    session_dir = _session_dir(safe_id, create=False)
+    if not os.path.isdir(session_dir):
+        return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
+
     assets_dir = os.path.join(session_dir, "assets")
-    # Solo servir imágenes PNG
+    if not os.path.isdir(assets_dir):
+        return jsonify({"error": "No existen assets para esta sesión."}), 404
+
     if not safe_file.endswith(".png"):
         return jsonify({"error": "Tipo de asset no permitido."}), 403
     return send_from_directory(assets_dir, safe_file)
@@ -406,14 +445,12 @@ def status():
 def shutdown():
     import signal
     import threading
-    import time
 
     pid = app.config.get("SERVER_PID", os.getpid())
 
     log_audit("shutdown")
 
     def _shutdown_later():
-        # Limpiar sesiones temporales
         try:
             sessions_root = _sessions_root()
             for name in os.listdir(sessions_root):

@@ -12,14 +12,15 @@ La herramienta **asiste** al proceso, pero **no sustituye la decisión profesion
 
 Versión actual del código: **0.4.0**.
 
-Esta revisión endurece el proyecto en varias capas:
+Esta revisión deja el proyecto mejor alineado en varias capas:
 
-- mayor coherencia de trazabilidad y versionado;
-- mejor aislamiento de instalación mediante entorno virtual local;
-- reducción de superficie de ataque en el instalador de Windows;
-- poda automática de sesiones antiguas;
-- control más explícito de la aplicación de redacciones sobre el original;
-- preflight defensivo para DOCX y límites homogéneos para PDF.
+- versión y requisito de Python unificados;
+- instalación aislada mediante entorno virtual local `.venv`;
+- sesiones visuales efímeras con poda por antigüedad;
+- exportaciones y frontend con trazabilidad de versión consistente;
+- aplicación sobre el original solo por acción explícita;
+- ejemplo de demo claramente sintético;
+- separación entre repositorio fuente y paquete distribuible simplificado.
 
 ## Principios de diseño
 
@@ -29,68 +30,10 @@ Esta revisión endurece el proyecto en varias capas:
 - **Trazabilidad**: el informe JSON conserva hallazgos, decisiones y metadatos.
 - **Persistencia mínima**: los temporales no visuales se eliminan y las sesiones visuales son efímeras.
 
-## Flujo de trabajo
-
-1. **Entrada**: carga de TXT, DOCX o PDF, o pegado de texto.
-2. **Análisis**: detección automática de datos sensibles.
-3. **Revisión**: confirmación, descarte o marcación manual de hallazgos.
-4. **Vista original PDF**: proyección de máscaras sobre la imagen del PDF original.
-5. **Aplicación sobre el original**: generación explícita de una copia derivada redactada.
-6. **Exportación**: informe JSON y copia derivada textual o PDF redactado.
-
-## Capacidades actuales
-
-### Detección base (regex)
-
-- DNI y NIE con validación.
-- Direcciones postales por patrones.
-- Teléfonos, correos electrónicos e IBAN.
-- Números de Seguridad Social y tarjetas por patrones.
-- Marcación manual desde la interfaz.
-
-### Detección NER (spaCy, opcional)
-
-- Nombres de personas.
-- Organizaciones e instituciones.
-- Lugares y topónimos.
-
-### Soporte documental
-
-- **TXT**: soporte nativo.
-- **DOCX**: extracción textual mediante `python-docx`, con preflight ZIP defensivo.
-- **PDF con capa de texto**: extracción y alineación visual mediante `PyMuPDF`.
-- **PDF escaneado**: OCR local opcional mediante `pytesseract` + Tesseract.
-
 ## Requisitos
-
-### Mínimos
 
 - Python **3.10 o superior**.
 - Entorno de escritorio local.
-
-### Dependencias base
-
-Instaladas desde `requirements.txt`:
-
-- Flask 3.1.3
-- waitress 3.0.2
-- python-docx 1.2.0
-- pypdf 6.10.0
-
-### Dependencias visuales opcionales
-
-Instaladas desde `requirements-visual.txt`:
-
-- PyMuPDF 1.27.2
-- Pillow 12.2.0
-- pytesseract 0.3.13
-
-### Dependencias NLP opcionales
-
-Instaladas desde `requirements-nlp.txt`:
-
-- spaCy 3.x
-- modelo español `es_core_news_md` o `es_core_news_sm`
 
 ## Instalación
 
@@ -98,69 +41,46 @@ Instaladas desde `requirements-nlp.txt`:
 
 Ejecuta `install.bat`.
 
-El instalador **ya no descarga Python automáticamente** ni ejecuta bootstrap remoto. Si Python 3.10+ no está presente, debes instalarlo previamente o distribuir Velo con un runtime empaquetado. Esta decisión se ha tomado para reducir la exposición de cadena de suministro.
-
-### macOS
-
-Ejecuta `install.command`.
-
-### Linux
+### Linux / macOS
 
 ```bash
 chmod +x install.sh
 ./install.sh
 ```
 
-### Comportamiento del instalador
-
 Los instaladores crean un entorno virtual local `.venv` dentro de la carpeta del proyecto para aislar dependencias y reducir conflictos con el sistema.
 
-## Estructura relevante
+## Distribución simplificada para usuarios no expertos
+
+No es recomendable deformar la raíz del repositorio fuente para ocultar archivos de desarrollo. En cambio, sí es recomendable generar un **paquete distribuible** distinto, con esta estructura:
 
 ```text
-velo/
-├── .github/workflows/security-checks.yml
-├── build.py
-├── install.bat
-├── install.command
-├── install.sh
-├── requirements.txt
-├── requirements-nlp.txt
-├── requirements-visual.txt
-├── run.py
-└── velo_engine/
-    ├── app.py
-    ├── constants.py
-    ├── detector.py
-    ├── reader.py
-    ├── security.py
-    ├── visual.py
-    └── templates/
-        └── index.html
+Velo/
+├─ INSTALAR_VELO.bat
+├─ INICIAR_VELO.bat
+├─ LEEME_PRIMERO.txt
+└─ app/
+   ├─ run.py
+   ├─ install.bat
+   ├─ install.sh
+   ├─ requirements.txt
+   ├─ requirements-visual.txt
+   ├─ requirements-nlp.txt
+   └─ velo_engine/
 ```
 
-## Mejoras introducidas en esta revisión
+Para generar ese bundle se incluye `tools/build_release_bundle.py`.
 
-- Se unifica la versión de aplicación en backend e informes.
-- Se corrige la inicialización del audit log para usar siempre el `workspace` real.
-- Se podan sesiones visuales antiguas al arranque.
-- Se evita la aplicación automática de redacciones al entrar en la fase correspondiente.
-- Se endurece el tratamiento de DOCX con validaciones ZIP previas.
-- Se sustituye `PyPDF2` por `pypdf` como fallback moderno.
-- Se fuerza instalación aislada mediante `.venv`.
-- Se añaden controles CI mínimos de seguridad y dependencias.
+## Ganchos locales recomendados
 
-## Limitaciones conocidas
+Para reducir el riesgo de volver a versionar material sensible:
 
-- La alineación visual en OCR puede no ser perfecta en documentos escaneados complejos.
-- No se incorpora todavía sandboxing a nivel de sistema operativo.
-- La herramienta sigue siendo principalmente sintáctica y puede producir falsos positivos o falsos negativos.
-- No hay firma de código para ejecutables o instaladores generados.
+```bash
+git config core.hooksPath .githooks
+```
+
+El hook incluido bloquea commits accidentales de `workspace/`, `.env`, `.venv/`, `*.log`, `original.pdf`, `visual.json` y `page_*.png`.
 
 ## Seguridad y privacidad
 
 Consulta [`SECURITY.md`](SECURITY.md).
-
-## Licencia
-
-Mantén la licencia original del repositorio al integrar estos cambios.

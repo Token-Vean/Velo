@@ -569,7 +569,8 @@
 <body>
     <div class="header">
         <div class="brand">
-            <img src="/static/logo.png" alt="Velo" style="height:40px;border-radius:8px;">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="Velo"
+                style="height:40px;border-radius:8px;display:block" onerror="this.style.display='none';">
             <div>
                 <div class="brand-title">Velo</div>
                 <div class="brand-sub">Detector, editor y anonimizador de datos en local</div>
@@ -585,17 +586,14 @@
         <button class="step-tab active" id="tab0">Entrada</button>
         <button class="step-tab" id="tab1">Análisis</button>
         <button class="step-tab" id="tab2">Revisión textual</button>
-        <button class="step-tab is-disabled" id="tab3">Vista original PDF <span class="step-note">(solo
-                PDF)</span></button>
-        <button class="step-tab is-disabled" id="tab4">Aplicación sobre el original <span class="step-note">(solo
-                PDF)</span></button>
+        <button class="step-tab is-disabled" id="tab3">Vista original PDF <span class="step-note">(solo PDF)</span></button>
+        <button class="step-tab is-disabled" id="tab4">Aplicación sobre el original <span class="step-note">(solo PDF)</span></button>
         <button class="step-tab" id="tab5">Exportación</button>
     </div>
 
     <div class="content" id="step-0">
         <h1 class="title">Cargar documento</h1>
-        <p class="desc">Suba un fichero o pegue texto. Para PDF, Velo puede añadir una fase visual basada en la imagen
-            original por página y en la misma base textual/OCR usada para detectar los hallazgos.</p>
+        <p class="desc">Suba un fichero o pegue texto. Para PDF, Velo puede añadir una fase visual basada en la imagen original por página y en la misma base textual/OCR usada para detectar los hallazgos.</p>
         <div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
             <div style="font-size:36px;margin-bottom:8px;">&#128196;</div>
             <div>Arrastre un fichero o <strong>pulse para seleccionar</strong></div>
@@ -605,8 +603,7 @@
         <input type="file" id="fileInput" style="display:none" accept=".txt,.docx,.pdf">
         <div class="divider">o pegue texto</div>
         <textarea id="textInput" placeholder="Pegue aquí el texto del documento..."></textarea>
-        <div
-            style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:14px;gap:10px;flex-wrap:wrap;">
             <div id="charCount" style="font-size:12px;color:var(--text-3);"></div>
             <div style="display:flex;gap:10px;">
                 <button class="btn" onclick="loadSample()">Cargar ejemplo</button>
@@ -623,10 +620,8 @@
     </div>
 
     <div class="content hidden" id="step-2">
-        <div class="info-box warn">Seleccione texto en el documento para marcar manualmente datos sensibles no
-            detectados. Resuelva todos los hallazgos antes de pasar al siguiente paso.</div>
-        <div class="info-box neutral">La técnica elegida se conserva en el informe JSON. En la vista original PDF, todas
-            las correcciones confirmadas se materializan como tachado visual sobre la imagen de la página.</div>
+        <div class="info-box warn">Seleccione texto en el documento para marcar manualmente datos sensibles no detectados. Resuelva todos los hallazgos antes de pasar al siguiente paso.</div>
+        <div class="info-box neutral">La técnica elegida se conserva en el informe JSON. En la vista original PDF, todas las correcciones confirmadas se materializan como tachado visual sobre la imagen de la página.</div>
         <div class="info-box neutral" id="workflowHint" style="margin-top:10px;"></div>
         <div class="review-layout">
             <div class="panel">
@@ -648,9 +643,7 @@
 
     <div class="content hidden" id="step-3">
         <h2 class="title">Vista original del PDF</h2>
-        <p class="desc">Esta fase proyecta los hallazgos confirmados sobre la imagen del PDF original. Las cajas negras
-            se calculan con la misma base textual u OCR empleada para el análisis. Es el paso previo obligatorio antes
-            de aplicar la edición sobre el original.</p>
+        <p class="desc">Esta fase proyecta los hallazgos confirmados sobre la imagen del PDF original. Las cajas negras se calculan con la misma base textual u OCR empleada para el análisis. Es el paso previo obligatorio antes de aplicar la edición sobre el original.</p>
         <div class="visual-note">
             <div class="info-box neutral" id="visualModeBox" style="margin:0;flex:1;"></div>
             <div class="info-box neutral" id="visualHelpBox" style="margin:0;flex:1;"></div>
@@ -660,14 +653,11 @@
 
     <div class="content hidden" id="step-4">
         <h2 class="title">Aplicación sobre el original</h2>
-        <p class="desc">Este es el quinto paso del proceso para PDF. Aquí Velo genera una copia derivada editada del PDF
-            original, aplicando las redacciones sobre la imagen de cada página a partir de la misma base textual u OCR
-            usada en la detección.</p>
+        <p class="desc">Este es el quinto paso del proceso para PDF. Aquí Velo genera una copia derivada editada del PDF original, aplicando las redacciones sobre la imagen de cada página a partir de la misma base textual u OCR usada en la detección.</p>
         <div class="info-box neutral" id="applyOriginalSummary"></div>
         <div class="info-box neutral" id="applyOriginalStatus" style="margin-top:10px;"></div>
         <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin:14px 0 10px;">
-            <button class="btn btn-accent" id="btnApplyOriginal" onclick="applyOriginalEdits(this)">Aplicar edición
-                sobre el original</button>
+            <button class="btn btn-accent" id="btnApplyOriginal" onclick="applyOriginalEdits(this)">Aplicar edición sobre el original</button>
         </div>
         <div id="appliedOriginalPages"></div>
     </div>
@@ -679,29 +669,20 @@
         <div class="panel" id="riskAssessment" style="margin-bottom:14px;"></div>
         <div class="panel checks" style="margin-bottom:14px;">
             <div style="font-weight:800;margin-bottom:10px;">Verificación antes de exportar</div>
-            <label class="check-row"><input type="checkbox" id="chkPurpose" onchange="checkCompliance()"><span>El
-                    tratamiento tiene una finalidad legítima documentada.</span></label>
-            <label class="check-row"><input type="checkbox" id="chkReview" onchange="checkCompliance()"><span>He
-                    revisado todos los hallazgos y he validado las correcciones.</span></label>
-            <label class="check-row"><input type="checkbox" id="chkRisk" onchange="checkCompliance()"><span>He valorado
-                    el riesgo de reidentificación del resultado visible.</span></label>
-            <div style="font-size:12px;color:var(--text-3);margin-top:8px;">La copia exportada no modifica el original
-                fuente fuera de la sesión. El informe JSON deja traza de revisión. Si se ha aplicado la edición sobre el
-                original, la descarga corresponde a una copia derivada visual del PDF original ya redactada.</div>
+            <label class="check-row"><input type="checkbox" id="chkPurpose" onchange="checkCompliance()"><span>El tratamiento tiene una finalidad legítima documentada.</span></label>
+            <label class="check-row"><input type="checkbox" id="chkReview" onchange="checkCompliance()"><span>He revisado todos los hallazgos y he validado las correcciones.</span></label>
+            <label class="check-row"><input type="checkbox" id="chkRisk" onchange="checkCompliance()"><span>He valorado el riesgo de reidentificación del resultado visible.</span></label>
+            <div style="font-size:12px;color:var(--text-3);margin-top:8px;">La copia exportada no modifica el original fuente fuera de la sesión. El informe JSON deja traza de revisión. Si se ha aplicado la edición sobre el original, la descarga corresponde a una copia derivada visual del PDF original ya redactada.</div>
         </div>
         <div class="json-output" id="jsonOutput"></div>
         <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:14px;">
             <button class="btn" onclick="copyJSON(this)">Copiar JSON</button>
             <button class="btn" id="btnSave" disabled onclick="saveJSON(this)">Guardar informe</button>
             <button class="btn" id="btnDerivedPdf" disabled onclick="exportDerivedPDF()">Generar copia textual</button>
-            <button class="btn btn-accent hidden" id="btnAppliedPdf" disabled
-                onclick="downloadAppliedOriginal(this)">Descargar original editado</button>
+            <button class="btn btn-accent hidden" id="btnAppliedPdf" disabled onclick="downloadAppliedOriginal(this)">Descargar original editado</button>
         </div>
-        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la redacción visual del
-            PDF se aplica en una copia derivada del original y se materializa antes de la exportación final.</div>
-        <div class="info-box neutral" style="margin-top:6px;"><strong>ISO/IEC 20889:</strong> el informe conserva la
-            técnica seleccionada para cada hallazgo, aunque la materialización visual del PDF original se realiza como
-            tachado gráfico.</div>
+        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la redacción visual del PDF se aplica en una copia derivada del original y se materializa antes de la exportación final.</div>
+        <div class="info-box neutral" style="margin-top:6px;"><strong>ISO/IEC 20889:</strong> el informe conserva la técnica seleccionada para cada hallazgo, aunque la materialización visual del PDF original se realiza como tachado gráfico.</div>
     </div>
 
     <div class="footer-nav hidden" id="footerNav">
@@ -714,8 +695,7 @@
 
     <div class="selection-popup" id="selectionPopup">
         <div style="font-size:13px;font-weight:800;margin-bottom:8px;">Marcar como dato sensible</div>
-        <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:700;padding:8px 10px;background:var(--surface-alt);border-radius:8px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"
-            id="popupSelectedText"></div>
+        <div style="font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;font-weight:700;padding:8px 10px;background:var(--surface-alt);border-radius:8px;max-width:320px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" id="popupSelectedText"></div>
         <div class="cat-options" id="categoryOptions"></div>
         <div style="display:flex;gap:8px;">
             <button class="btn btn-sm btn-accent" onclick="addManualFinding()">Marcar</button>
@@ -727,6 +707,7 @@
         const CATEGORY_COLORS = { identification: "#DC2626", contact: "#2563EB", financial: "#7C3AED", personal: "#059669", health: "#DB2777" };
         const CATEGORY_LABELS = { identification: "Identificación", contact: "Contacto", financial: "Financiero", personal: "Personal", health: "Salud" };
         const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+        const APP_VERSION = {{ app_version | tojson }};
 
         function apiFetch(url, options = {}) {
             const opts = { credentials: "same-origin", ...options };
@@ -760,7 +741,7 @@
         let appliedSignature = null;
         let applyingOriginal = false;
 
-        const SAMPLE_TEXT = "EXPEDIENTE DE AYUDA SOCIAL - Nº 2024/1547\n\nSolicitante: María del Carmen Rodríguez López\nDNI: 52846371P\nNIE del cónyuge: X1234567L\nFecha de nacimiento: 15/03/1978\nDomicilio: Calle de la Constitución, nº 42, 3ºB\nCódigo postal: 28045, Madrid\n\nTeléfono de contacto: 654 321 098\nCorreo electrónico: mcarmen.rodriguez@gmail.com\n\nNº de la Seguridad Social: 28/12345678/05\nCuenta bancaria: ES76 2100 0813 61 0123456789\n\nINFORME SOCIAL:\nLa solicitante, nacida el 15/03/1978, acude al servicio derivada por el Centro de Salud de Usera. Refiere situación de desempleo. Su cónyuge, Ahmed Ben Ali (NIE: Y7654321Z), se encuentra en situación de incapacidad temporal.";
+        const SAMPLE_TEXT = "EXPEDIENTE SINTÉTICO DE PRUEBA - Nº TEST/2026/001\n\nSolicitante: Persona de Ejemplo Uno\nDNI: 00000000T\nNIE del conviviente: X0000000T\nFecha de nacimiento: 15/03/1978\nDomicilio: Calle de Ejemplo, nº 42, 3ºB\nCódigo postal: 28045, Madrid\n\nTeléfono de contacto: 600 123 123\nCorreo electrónico: persona.ejemplo@dominio.test\n\nNº de la Seguridad Social: 28/12345678/05\nCuenta bancaria: ES9121000418450200051332\n\nINFORME DE PRUEBA:\nLa persona solicitante acude al servicio derivada por un centro municipal. Este texto es sintético y se incluye únicamente para verificar la detección local de patrones sensibles.";
 
         function catLabel(cat) { return CATEGORY_LABELS[cat] || cat; }
 
@@ -1212,9 +1193,8 @@
                 document.getElementById("applyOriginalStatus").innerHTML = `La edición ya se ha aplicado sobre una copia derivada del original. Páginas generadas: <strong>${appliedOriginal.page_count}</strong>. Máscaras materializadas: <strong>${appliedOriginal.total_rectangles}</strong>.`;
                 renderAppliedOriginalPages();
             } else {
-                document.getElementById("applyOriginalStatus").innerHTML = "Todavía no se ha generado la copia redactada del original para esta sesión.";
+                document.getElementById("applyOriginalStatus").innerHTML = "La copia derivada todavía no se ha generado. Use el botón para aplicar la edición sobre el original de forma explícita.";
                 document.getElementById("appliedOriginalPages").innerHTML = "";
-                setTimeout(() => { if (currentStep === 4 && !applyingOriginal) applyOriginalEdits(document.getElementById('btnApplyOriginal')); }, 50);
             }
             updateStepUI();
         }
@@ -1267,7 +1247,7 @@
                 document_id: "DOC-" + Date.now().toString(36).toUpperCase(),
                 analysis_date: now,
                 tool: "velo",
-                version: "0.2.5",
+                version: APP_VERSION,
                 layers_active: layersActive,
                 layers_available: layersAvailable,
                 source_format: currentFormat,
@@ -1319,7 +1299,7 @@
                 audit: {
                     reviewed_by: "archivero",
                     review_date: now.split("T")[0],
-                    tool_version: "0.2.5",
+                    tool_version: APP_VERSION,
                     execution: "local"
                 }
             };
@@ -1430,7 +1410,7 @@
             });
             if (last < documentText.length) html += escapeHtml(documentText.slice(last));
             const win = window.open("", "_blank");
-            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Documento testado</title><style>body{font-family:Courier New,monospace;font-size:12px;line-height:1.8;max-width:820px;margin:40px auto;padding:20px;color:#000}.doc{white-space:pre-wrap;word-break:break-word}.hdr,.ftr{font-family:Arial,sans-serif;font-size:11px;color:#666}.hdr{border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px}.ftr{border-top:1px solid #ccc;padding-top:12px;margin-top:24px}@media print{.np{display:none}}</style></head><body><div class="hdr"><h2>DOCUMENTO TESTADO</h2><div>Velo v0.2.5</div><div>Copia derivada con sustituciones textuales</div></div><div class="doc">${html}</div><div class="ftr">El original no se ha modificado. Esta salida textual es una copia derivada.</div><div class="np" style="text-align:center;margin-top:24px;"><button onclick="window.print()" style="padding:10px 24px;border:0;border-radius:8px;background:#1c1917;color:#fff;cursor:pointer;">Imprimir / Guardar como PDF</button></div></body></html>`);
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Documento testado</title><style>body{font-family:Courier New,monospace;font-size:12px;line-height:1.8;max-width:820px;margin:40px auto;padding:20px;color:#000}.doc{white-space:pre-wrap;word-break:break-word}.hdr,.ftr{font-family:Arial,sans-serif;font-size:11px;color:#666}.hdr{border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px}.ftr{border-top:1px solid #ccc;padding-top:12px;margin-top:24px}@media print{.np{display:none}}</style></head><body><div class="hdr"><h2>DOCUMENTO TESTADO</h2><div>Velo v${APP_VERSION}</div><div>Copia derivada con sustituciones textuales</div></div><div class="doc">${html}</div><div class="ftr">El original no se ha modificado. Esta salida textual es una copia derivada.</div><div class="np" style="text-align:center;margin-top:24px;"><button onclick="window.print()" style="padding:10px 24px;border:0;border-radius:8px;background:#1c1917;color:#fff;cursor:pointer;">Imprimir / Guardar como PDF</button></div></body></html>`);
             win.document.close();
         }
 

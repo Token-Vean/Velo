@@ -10,6 +10,8 @@ import logging
 import re
 from datetime import datetime
 
+from velo_engine.constants import APP_VERSION
+
 logger = logging.getLogger("velo.detector")
 
 PATTERNS = [
@@ -300,7 +302,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         "document_id": document_id,
         "analysis_date": now,
         "tool": "velo",
-        "version": "0.3.0",
+        "version": APP_VERSION,
         "method": "regex+ner" if "spacy_ner" in layers_active else "regex",
         "layers_active": layers_active,
         "layers_available": layers_available,
@@ -341,7 +343,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         "audit": {
             "reviewed_by": "archivero",
             "review_date": now.split("T")[0],
-            "tool_version": "0.3.0",
+            "tool_version": APP_VERSION,
             "execution": "local",
             "standards_applied": ["ISO/IEC 27038", "ISO/IEC 20889", "ISO/IEC 27559", "ISO/IEC 29100"],
         },

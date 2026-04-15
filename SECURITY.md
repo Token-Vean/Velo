@@ -14,13 +14,13 @@ Velo is designed for **strictly local and personal use** by a professional user 
 ## Hardening choices in this revision
 
 - Local-only install with isolated `.venv`.
-- No automatic remote Python bootstrap in Windows installer.
+- No automatic remote Python bootstrap in the Windows installer.
 - CSRF protection and same-origin checks.
-- Security headers and no-store policy on API responses.
+- Security headers and `no-store` policy on dynamic responses.
 - Rotating audit log under the configured workspace.
-- Ephemeral visual sessions with stale-session cleanup at startup.
-- Defensive DOCX preflight and PDF page limits.
-- OCR timeout to reduce workstation lockups.
+- Ephemeral visual sessions with stale-session cleanup.
+- Explicit user action before applying redactions over the original-derived PDF.
+- Demo sample replaced with clearly synthetic content.
 
 ## Known residual risks
 
@@ -36,6 +36,7 @@ Velo is designed for **strictly local and personal use** by a professional user 
 - Protect the OS account with full-disk encryption.
 - Keep dependencies updated and monitor advisories.
 - Avoid processing untrusted files from unknown sources without prior malware screening.
+- Enable the repository hook path with `git config core.hooksPath .githooks`.
 
 ## Reporting
 

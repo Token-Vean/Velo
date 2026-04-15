@@ -5,41 +5,66 @@ cd /d "%~dp0"
 
 echo.
 echo  ======================================================
-echo   Velo - Detector de datos sensibles v0.3.0
+echo   Velo - Detector de datos sensibles v0.4.0
 echo  ======================================================
 echo.
 
 set "PYTHON_CMD="
 where python >nul 2>&1
 if %errorlevel% equ 0 (
-    python -c "import sys; assert sys.version_info >= (3, 9)" >nul 2>&1
+    python -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
     if !errorlevel! equ 0 set "PYTHON_CMD=python"
 )
 if not defined PYTHON_CMD (
     where py >nul 2>&1
     if %errorlevel% equ 0 (
-        py -3 -c "import sys; assert sys.version_info >= (3, 9)" >nul 2>&1
+        py -3 -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
         if !errorlevel! equ 0 set "PYTHON_CMD=py -3"
     )
 )
 if not defined PYTHON_CMD (
     where python3 >nul 2>&1
     if %errorlevel% equ 0 (
-        python3 -c "import sys; assert sys.version_info >= (3, 9)" >nul 2>&1
+        python3 -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
         if !errorlevel! equ 0 set "PYTHON_CMD=python3"
     )
 )
 if not defined PYTHON_CMD (
-    echo   [ERROR] No se ha encontrado Python 3.9+ en este equipo.
+    echo   [ERROR] No se ha encontrado Python 3.10+ en este equipo.
     echo.
     pause
     goto :eof
 )
 
 echo   [OK] Python detectado: %PYTHON_CMD%
+
+echo   Preparando entorno virtual local .venv ...
+if not exist ".venv\Scripts\python.exe" (
+    %PYTHON_CMD% -m venv .venv
+    if errorlevel 1 (
+        echo.
+        echo   [ERROR] No se pudo crear el entorno virtual .venv.
+        echo.
+        pause
+        goto :eof
+    )
+)
+
+set "VENV_PY=.venv\Scripts\python.exe"
+
+echo   Actualizando pip del entorno local...
+%VENV_PY% -m pip install --upgrade pip setuptools wheel --no-warn-script-location
+if errorlevel 1 (
+    echo.
+    echo   [ERROR] No se pudo preparar pip dentro de .venv.
+    echo.
+    pause
+    goto :eof
+)
+
 echo.
 echo   Instalando dependencias base...
-%PYTHON_CMD% -m pip install -r requirements.txt --no-warn-script-location
+%VENV_PY% -m pip install -r requirements.txt --no-warn-script-location
 if errorlevel 1 (
     echo.
     echo   [ERROR] No se pudieron instalar las dependencias base.
@@ -50,7 +75,7 @@ if errorlevel 1 (
 
 echo.
 echo   Intentando instalar dependencias visuales opcionales...
-%PYTHON_CMD% -m pip install -r requirements-visual.txt --no-warn-script-location
+%VENV_PY% -m pip install -r requirements-visual.txt --no-warn-script-location
 if errorlevel 1 (
     echo   [AVISO] No se pudieron instalar las dependencias visuales.
     echo           Velo arrancara igualmente en modo base.
@@ -59,7 +84,7 @@ if errorlevel 1 (
 )
 
 echo.
-%PYTHON_CMD% -c "import spacy" >nul 2>&1
+%VENV_PY% -c "import spacy" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  ------------------------------------------------------
     echo   DETECCION DE NOMBRES Y APELLIDOS (opcional)
@@ -69,21 +94,21 @@ if %errorlevel% neq 0 (
     if /i "%INSTALL_NLP%"=="S" (
         echo.
         echo   Instalando spaCy...
-        %PYTHON_CMD% -m pip install -r requirements-nlp.txt --no-warn-script-location
+        %VENV_PY% -m pip install -r requirements-nlp.txt --no-warn-script-location
         if errorlevel 1 (
             echo   [AVISO] No se pudo instalar spaCy.
             echo           Velo arrancara igualmente en modo regex.
         ) else (
             echo   [OK] spaCy instalado
-            %PYTHON_CMD% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
+            %VENV_PY% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
             if errorlevel 1 (
-                %PYTHON_CMD% -c "import spacy; spacy.load('es_core_news_sm')" >nul 2>&1
+                %VENV_PY% -c "import spacy; spacy.load('es_core_news_sm')" >nul 2>&1
                 if errorlevel 1 (
                     echo   Descargando modelo es_core_news_md...
-                    %PYTHON_CMD% -m spacy download es_core_news_md --no-warn-script-location
+                    %VENV_PY% -m spacy download es_core_news_md --no-warn-script-location
                     if errorlevel 1 (
                         echo   Intentando modelo ligero es_core_news_sm...
-                        %PYTHON_CMD% -m spacy download es_core_news_sm --no-warn-script-location
+                        %VENV_PY% -m spacy download es_core_news_sm --no-warn-script-location
                         if errorlevel 1 (
                             echo   [AVISO] No se pudo instalar ningun modelo de spaCy.
                             echo           Velo arrancara igualmente en modo regex.
@@ -108,10 +133,9 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo   Iniciando Velo...
-echo   Si spaCy falla, la aplicacion debe arrancar igualmente en modo regex.
+echo   Iniciando Velo dentro de .venv ...
 echo.
-%PYTHON_CMD% run.py
+%VENV_PY% run.py
 set "EXITCODE=%ERRORLEVEL%"
 
 echo.

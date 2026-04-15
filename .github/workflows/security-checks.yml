@@ -7,19 +7,39 @@ on:
 jobs:
   security:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
         with:
           python-version: '3.11'
+          cache: 'pip'
+
+      - name: Show environment
+        run: |
+          python --version
+          pip --version
+
       - name: Install base dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install bandit pip-audit
+
       - name: Compile check
         run: python -m compileall .
+
       - name: Bandit
         run: bandit -r . -x .venv,build,dist,workspace
-      - name: Pip audit
+
+      - name: Pip audit (base)
         run: pip-audit -r requirements.txt
+
+      - name: Pip audit (visual)
+        run: pip-audit -r requirements-visual.txt
+
+      - name: Pip audit (nlp)
+        run: pip-audit -r requirements-nlp.txt
