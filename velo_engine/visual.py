@@ -33,8 +33,8 @@ logger = logging.getLogger("velo.visual")
 try:
     from PIL import Image as _PilImage
     _PilImage.MAX_IMAGE_PIXELS = 25_000_000  # ~5000x5000
-except ImportError:
-    pass
+except ImportError as exc:
+    logger.debug("Pillow no disponible al fijar MAX_IMAGE_PIXELS: %s", exc, exc_info=True)
 
 MAX_PDF_PAGES_VISUAL = 500
 
@@ -104,11 +104,8 @@ def _normalize_word(word: str) -> str:
 
 def _clean_extracted_text(text: str) -> str:
     """Normaliza Unicode y limpia caracteres problematicos del texto extraido."""
-    # Normalizar a NFC (forma compuesta canonica)
     text = unicodedata.normalize("NFC", text)
-    # Reemplazar espacios Unicode exoticos por espacio normal
     text = re.sub(r'[\u00a0\u2002\u2003\u2009\u200a\u202f]', ' ', text)
-    # Eliminar caracteres de control (excepto \n y \t)
     text = re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]', '', text)
     return text
 
@@ -199,7 +196,6 @@ def _words_from_text_layer(page, scale: float) -> List[dict]:
             }
         )
 
-    # Detectar y corregir capas OCR caracter-por-caracter
     if _is_char_level_ocr(words):
         words = _merge_char_level_words(words, scale)
 
@@ -255,39 +251,25 @@ def _map_words_to_canonical(
     global_offset: int,
     page_number: int,
 ) -> List[dict]:
-    """Asigna a cada palabra su posicion (start/end) dentro del texto canonico.
-
-    Recorre las palabras en orden y busca cada una secuencialmente en el
-    texto canonico.  Aplica la misma normalizacion Unicode al texto de cada
-    palabra que se aplico al texto canonico para evitar desajustes por NFC,
-    caracteres de control, o espacios Unicode exoticos.
-
-    Retorna la lista de palabras mapeadas.  Si el ratio de exito es bajo
-    la funcion que llama debera usar el fallback de reconstruccion.
-    """
+    """Asigna a cada palabra su posicion (start/end) dentro del texto canonico."""
     mapped: List[dict] = []
-    scan_pos = 0  # cursor dentro de canonical_text
+    scan_pos = 0
 
     canonical_lower = canonical_text.lower()
 
     for word in words:
-        # Normalizar texto de la palabra igual que el canonico
         w_text = _clean_extracted_text(word["text"])
         if not w_text.strip():
             continue
 
-        # 1. Busqueda exacta hacia adelante
         pos = canonical_text.find(w_text, scan_pos)
 
-        # 2. Fallback: case-insensitive
         if pos == -1:
             pos = canonical_lower.find(w_text.lower(), scan_pos)
 
-        # 3. Fallback: busqueda desde el inicio (por si el orden difiere)
         if pos == -1 and scan_pos > 0:
             pos = canonical_text.find(w_text, 0)
             if pos != -1 and pos < scan_pos:
-                # Encontrada antes del cursor: aceptar sin avanzar cursor
                 start = global_offset + pos
                 end = start + len(w_text)
                 mapped.append(
@@ -301,7 +283,6 @@ def _map_words_to_canonical(
                         "source": word["source"],
                     }
                 )
-                # NO avanzar scan_pos — fue un match fuera de orden
                 continue
 
         if pos == -1:
@@ -335,12 +316,7 @@ def _map_words_to_canonical(
 # ---------------------------------------------------------------------------
 
 def _page_text_and_map(words: Iterable[dict], global_offset: int, page_number: int) -> Tuple[str, List[dict], int]:
-    """Reconstruye texto a partir de palabras individuales.
-
-    Se usa SOLO para paginas procesadas con OCR propio, donde no existe
-    un texto canonico de PyMuPDF. Para paginas con capa de texto se usa
-    _map_words_to_canonical en su lugar.
-    """
+    """Reconstruye texto a partir de palabras individuales."""
     page_words: List[dict] = []
     text_parts: List[str] = []
     cursor = global_offset
@@ -416,9 +392,6 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
         image_path = os.path.join(assets_dir, image_name)
         width, height = _render_page_image(page, image_path, TEXT_RENDER_SCALE)
 
-        # ---------------------------------------------------------------
-        # Intentar capa de texto nativa (doble extraccion)
-        # ---------------------------------------------------------------
         page_words_raw = _words_from_text_layer(page, TEXT_RENDER_SCALE)
         source = "text_layer"
 
@@ -430,21 +403,18 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
             used_text_layer = True
             any_text = True
 
-            # Texto canonico: alta calidad, flujo natural
             canonical = _clean_extracted_text(page.get_text("text") or "")
             canonical = canonical.strip()
 
             use_canonical = False
 
             if canonical:
-                # Intentar ruta principal: texto canonico + mapeo de bboxes
                 trial_mapped = _map_words_to_canonical(
                     page_words_raw, canonical, global_offset, page_index + 1,
                 )
                 map_ratio = len(trial_mapped) / len(page_words_raw) if page_words_raw else 0
 
                 if map_ratio >= 0.50:
-                    # Mapeo aceptable: usar texto canonico
                     use_canonical = True
                     mapped_words = trial_mapped
                     page_text = canonical
@@ -459,7 +429,6 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
                             len(page_words_raw), unmapped, map_ratio * 100,
                         )
                 else:
-                    # Mapeo insuficiente: fallback a reconstruccion por palabras
                     logger.warning(
                         "Pagina %d: mapeo canonico insuficiente (%d/%d = %.0f%%). "
                         "Usando reconstruccion por palabras para garantizar "
@@ -469,7 +438,6 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
                     )
 
             if not use_canonical:
-                # Reconstruir texto desde palabras (fallback seguro)
                 page_text, mapped_words, global_offset = _page_text_and_map(
                     page_words_raw, global_offset, page_index + 1,
                 )
@@ -479,9 +447,6 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
                 parts.append("\n\n")
                 global_offset += 2
 
-        # ---------------------------------------------------------------
-        # Sin capa de texto: intentar OCR
-        # ---------------------------------------------------------------
         elif caps["pytesseract"] and caps["tesseract_ready"]:
             ocr_words = _words_from_ocr(image_path)
             source = "ocr"
@@ -614,11 +579,7 @@ def _signature_for_findings(findings: List[dict]) -> str:
 
 
 def _build_pdf_from_images(image_paths: List[str], output_path: str) -> None:
-    """Compone el PDF final con PyMuPDF a partir de PNGs ya redactados.
-
-    Esto evita los fallos intermitentes observados al guardar PDFs multiimagen
-    directamente con Pillow en algunos entornos Windows.
-    """
+    """Compone el PDF final con PyMuPDF a partir de PNGs ya redactados."""
     import fitz
     from PIL import Image
 
@@ -701,7 +662,7 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
 
 
 def export_visual_redacted_pdf(session_dir: str, findings: List[dict], output_path: str) -> str:
-    result = apply_redactions_to_original(session_dir, "export", findings)
+    apply_redactions_to_original(session_dir, "export", findings)
     generated = os.path.join(session_dir, APPLIED_PDF_NAME)
     if os.path.abspath(generated) != os.path.abspath(output_path):
         with open(generated, "rb") as src, open(output_path, "wb") as dst:

@@ -238,8 +238,13 @@ def analyze_file():
     finally:
         try:
             os.remove(filepath)
-        except OSError:
-            pass
+        except OSError as exc:
+            logger.debug(
+                "No se pudo eliminar el fichero temporal %s: %s",
+                filepath,
+                exc,
+                exc_info=True,
+            )
 
     if error:
         logger.warning("Error en extracción de fichero: %s (fichero=%s)", error, original_name)
