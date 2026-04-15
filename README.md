@@ -1,71 +1,96 @@
 # Velo
 
-Herramienta local para archiveros y profesionales de la gestión documental orientada a detectar, revisar y anonimizar datos sensibles en documentos. Velo **asiste** al proceso, pero **no sustituye la decisión profesional**: cada hallazgo debe ser confirmado o descartado por la persona revisora.
+Herramienta local para archiveros y profesionales de la gestión documental orientada a **detectar, revisar y redactar** datos sensibles en documentos.
+
+## Posicionamiento del proyecto
+
+Velo está concebido para **uso personal y estrictamente local** en el puesto de trabajo del profesional. No es una aplicación pensada para despliegue multiusuario, publicación en red o tratamiento automatizado sin supervisión.
+
+La herramienta **asiste** al proceso, pero **no sustituye la decisión profesional**: cada hallazgo debe ser confirmado, descartado o añadido manualmente por la persona revisora.
 
 ## Estado del proyecto
 
-Versión actual del código: **0.3.0**.
+Versión actual del código: **0.4.0**.
 
-El proyecto es funcional para revisión local y generación de copias derivadas redactadas. No debe presentarse como certificación de cumplimiento normativo automático ni como sustituto de una revisión archivística, jurídica o de protección de datos.
+Esta revisión endurece el proyecto en varias capas:
+
+- mayor coherencia de trazabilidad y versionado;
+- mejor aislamiento de instalación mediante entorno virtual local;
+- reducción de superficie de ataque en el instalador de Windows;
+- poda automática de sesiones antiguas;
+- control más explícito de la aplicación de redacciones sobre el original;
+- preflight defensivo para DOCX y límites homogéneos para PDF.
 
 ## Principios de diseño
 
-- **Procesamiento local**: la aplicación escucha en `127.0.0.1` y no necesita enviar documentos a servicios externos para funcionar.
-- **Revisión humana obligatoria**: la herramienta detecta y propone; el archivero confirma, descarta o añade hallazgos manualmente.
-- **Salida trazable**: el proceso genera un informe JSON con hallazgos, decisiones y metadatos de revisión.
-- **No altera el máster original**: cuando redacta un PDF, genera una **copia derivada** del original, no modifica el archivo fuente in situ.
+- **Procesamiento local**: la aplicación escucha en `127.0.0.1`.
+- **Revisión humana obligatoria**: Velo detecta y propone; el archivero valida.
+- **No altera el máster original**: cuando redacta un PDF, genera una **copia derivada**.
+- **Trazabilidad**: el informe JSON conserva hallazgos, decisiones y metadatos.
+- **Persistencia mínima**: los temporales no visuales se eliminan y las sesiones visuales son efímeras.
 
 ## Flujo de trabajo
 
 1. **Entrada**: carga de TXT, DOCX o PDF, o pegado de texto.
 2. **Análisis**: detección automática de datos sensibles.
-3. **Revisión textual**: confirmación, descarte o marcación manual de hallazgos.
-4. **Vista original PDF**: previsualización de las máscaras sobre la imagen del PDF original cuando hay soporte visual.
-5. **Aplicación sobre el original**: materialización de la redacción sobre una copia derivada del PDF original.
-6. **Exportación**: descarga de informe JSON y, según el caso, copia textual o PDF visual redactado.
+3. **Revisión**: confirmación, descarte o marcación manual de hallazgos.
+4. **Vista original PDF**: proyección de máscaras sobre la imagen del PDF original.
+5. **Aplicación sobre el original**: generación explícita de una copia derivada redactada.
+6. **Exportación**: informe JSON y copia derivada textual o PDF redactado.
 
 ## Capacidades actuales
 
 ### Detección base (regex)
 
-- DNI y NIE con validación básica.
+- DNI y NIE con validación.
 - Direcciones postales por patrones.
-- Teléfonos, correos electrónicos y cuentas IBAN.
+- Teléfonos, correos electrónicos e IBAN.
 - Números de Seguridad Social y tarjetas por patrones.
 - Marcación manual desde la interfaz.
 
 ### Detección NER (spaCy, opcional)
 
-- Nombres de personas (nombres y apellidos).
+- Nombres de personas.
 - Organizaciones e instituciones.
 - Lugares y topónimos.
-- Se activa automáticamente si spaCy y un modelo español están instalados.
-- El instalador pregunta si se desea instalar esta capa durante la primera ejecución.
 
 ### Soporte documental
 
 - **TXT**: soporte nativo.
-- **DOCX**: extracción textual mediante `python-docx`.
+- **DOCX**: extracción textual mediante `python-docx`, con preflight ZIP defensivo.
 - **PDF con capa de texto**: extracción y alineación visual mediante `PyMuPDF`.
-- **PDF escaneado**: soporte opcional con OCR local usando `pytesseract` + Tesseract instalado en el sistema.
+- **PDF escaneado**: OCR local opcional mediante `pytesseract` + Tesseract.
 
 ## Requisitos
 
-### Base
+### Mínimos
 
-- Python 3.9 o superior.
-- Dependencias de `requirements.txt`.
+- Python **3.10 o superior**.
+- Entorno de escritorio local.
 
-### Visual/OCR opcional
+### Dependencias base
 
-- Dependencias de `requirements-visual.txt`.
-- Para OCR de PDF escaneado: Tesseract OCR instalado en el sistema y disponible en `PATH`.
+Instaladas desde `requirements.txt`:
 
-### Detección de nombres (NLP, opcional)
+- Flask 3.1.3
+- waitress 3.0.2
+- python-docx 1.2.0
+- pypdf 6.10.0
 
-- Dependencias de `requirements-nlp.txt` (spaCy).
-- Modelo español: `python -m spacy download es_core_news_md`.
-- El instalador pregunta durante la primera ejecución si se desea instalar esta capa.
+### Dependencias visuales opcionales
+
+Instaladas desde `requirements-visual.txt`:
+
+- PyMuPDF 1.27.2
+- Pillow 12.2.0
+- pytesseract 0.3.13
+
+### Dependencias NLP opcionales
+
+Instaladas desde `requirements-nlp.txt`:
+
+- spaCy 3.x
+- modelo español `es_core_news_md` o `es_core_news_sm`
 
 ## Instalación
 
@@ -73,7 +98,7 @@ El proyecto es funcional para revisión local y generación de copias derivadas 
 
 Ejecuta `install.bat`.
 
-El instalador intenta usar Python del sistema. Si no existe una versión compatible, ofrece descargar Python embebido desde `python.org`.
+El instalador **ya no descarga Python automáticamente** ni ejecuta bootstrap remoto. Si Python 3.10+ no está presente, debes instalarlo previamente o distribuir Velo con un runtime empaquetado. Esta decisión se ha tomado para reducir la exposición de cadena de suministro.
 
 ### macOS
 
@@ -86,28 +111,16 @@ chmod +x install.sh
 ./install.sh
 ```
 
-### Instalación manual
+### Comportamiento del instalador
 
-```bash
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-visual.txt  # opcional: revisión visual PDF
-python -m pip install -r requirements-nlp.txt     # opcional: detección de nombres
-python -m spacy download es_core_news_md          # opcional: modelo español para NER
-python run.py
-```
+Los instaladores crean un entorno virtual local `.venv` dentro de la carpeta del proyecto para aislar dependencias y reducir conflictos con el sistema.
 
-## Estructura del repositorio
+## Estructura relevante
 
 ```text
 velo/
-├── .github/workflows/python-smoke.yml
+├── .github/workflows/security-checks.yml
 ├── build.py
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-├── LICENSE
-├── README.md
-├── SECURITY.md
-├── docs/
 ├── install.bat
 ├── install.command
 ├── install.sh
@@ -117,29 +130,32 @@ velo/
 ├── run.py
 └── velo_engine/
     ├── app.py
+    ├── constants.py
     ├── detector.py
     ├── reader.py
+    ├── security.py
     ├── visual.py
-    ├── static/
     └── templates/
+        └── index.html
 ```
 
-## Publicación en GitHub
+## Mejoras introducidas en esta revisión
 
-Este paquete ya está saneado para repositorio público:
-
-- sin `__pycache__`;
-- sin `workspace/` ni sesiones locales;
-- sin artefactos de prueba generados por ejecución;
-- con documentación de instalación y soporte;
-- con `CHANGELOG.md`, `CONTRIBUTING.md` y una comprobación básica de CI.
+- Se unifica la versión de aplicación en backend e informes.
+- Se corrige la inicialización del audit log para usar siempre el `workspace` real.
+- Se podan sesiones visuales antiguas al arranque.
+- Se evita la aplicación automática de redacciones al entrar en la fase correspondiente.
+- Se endurece el tratamiento de DOCX con validaciones ZIP previas.
+- Se sustituye `PyPDF2` por `pypdf` como fallback moderno.
+- Se fuerza instalación aislada mediante `.venv`.
+- Se añaden controles CI mínimos de seguridad y dependencias.
 
 ## Limitaciones conocidas
 
-- La alineación visual puede requerir ajuste fino en PDFs escaneados con OCR, porque las cajas OCR no siempre coinciden con precisión perfecta con el renderizado visual.
-- La detección sigue siendo principalmente sintáctica y puede producir falsos positivos o falsos negativos.
-- No hay firma de código para los instaladores ni binarios generados.
-- No se han incorporado todavía tests funcionales amplios con corpus archivístico real.
+- La alineación visual en OCR puede no ser perfecta en documentos escaneados complejos.
+- No se incorpora todavía sandboxing a nivel de sistema operativo.
+- La herramienta sigue siendo principalmente sintáctica y puede producir falsos positivos o falsos negativos.
+- No hay firma de código para ejecutables o instaladores generados.
 
 ## Seguridad y privacidad
 
@@ -147,4 +163,4 @@ Consulta [`SECURITY.md`](SECURITY.md).
 
 ## Licencia
 
-Este repositorio se distribuye bajo **AGPLv3**. Revisa el archivo [`LICENSE`](LICENSE) antes de redistribuirlo o integrarlo en otros desarrollos.
+Mantén la licencia original del repositorio al integrar estos cambios.

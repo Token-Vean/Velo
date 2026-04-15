@@ -4,6 +4,8 @@ Velo - Detector de datos sensibles para archiveros.
 Ejecuta este fichero para iniciar la aplicación.
 """
 
+from __future__ import annotations
+
 import logging
 import os
 import socket
@@ -30,7 +32,10 @@ def setup_logging(workspace: str) -> None:
 
     log_path = os.path.join(log_dir, "velo.log")
     file_handler = RotatingFileHandler(
-        log_path, maxBytes=5_000_000, backupCount=5, encoding="utf-8",
+        log_path,
+        maxBytes=5_000_000,
+        backupCount=5,
+        encoding="utf-8",
     )
     file_handler.setFormatter(logging.Formatter(
         "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
@@ -39,24 +44,21 @@ def setup_logging(workspace: str) -> None:
     file_handler.setLevel(logging.DEBUG)
 
     console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(logging.Formatter(
-        "  %(levelname)-7s %(message)s",
-    ))
+    console_handler.setFormatter(logging.Formatter("  %(levelname)-7s %(message)s"))
     console_handler.setLevel(logging.WARNING)
 
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
-    root.addHandler(file_handler)
-    root.addHandler(console_handler)
+    if not root.handlers:
+        root.addHandler(file_handler)
+        root.addHandler(console_handler)
 
-    # Silenciar loggers ruidosos de terceros
     logging.getLogger("waitress").setLevel(logging.ERROR)
     logging.getLogger("werkzeug").setLevel(logging.WARNING)
-
     logging.getLogger("velo").info("Logging inicializado: %s", log_path)
 
 
-def find_free_port(start=7780, end=7800):
+def find_free_port(start: int = 7780, end: int = 7800) -> int | None:
     for port in range(start, end):
         try:
             with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -67,38 +69,66 @@ def find_free_port(start=7780, end=7800):
     return None
 
 
-def open_browser(port):
-    time.sleep(1.5)
+def open_browser_when_ready(port: int, timeout: float = 20.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+                webbrowser.open(f"http://localhost:{port}")
+                return
+        except Exception:
+            time.sleep(0.25)
     try:
         webbrowser.open(f"http://localhost:{port}")
     except Exception:
         pass
 
 
-def _check_spacy() -> str:
-    """Comprueba spaCy y modelo. Devuelve texto para consola."""
+def _probe_spacy_safe() -> str:
+    logger = logging.getLogger("velo.startup")
     try:
-        import spacy
-    except ImportError:
-        return "  [--] spaCy no instalado (detección de nombres desactivada)\n" \
-               "       Instale con: pip install -r requirements-nlp.txt"
+        import spacy  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("spaCy no disponible o no cargable: %s", exc, exc_info=True)
+        return (
+            "  [--] spaCy no disponible o no cargable\n"
+            "       Velo arrancará en modo regex.\n"
+            f"       Detalle: {type(exc).__name__}: {exc}"
+        )
 
     for model_name in ("es_core_news_md", "es_core_news_sm"):
         try:
             spacy.load(model_name)
+            logger.info("spaCy operativo con modelo %s", model_name)
             return f"  [OK] spaCy + modelo {model_name} (detección de nombres activa)"
-        except OSError:
-            continue
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "spaCy cargó, pero el modelo %s no pudo abrirse: %s",
+                model_name,
+                exc,
+                exc_info=True,
+            )
 
-    return "  [!!] spaCy instalado pero SIN modelo español\n" \
-           "       Instale con: python -m spacy download es_core_news_md"
+    return (
+        "  [--] spaCy instalado pero sin modelo cargable\n"
+        "       Velo arrancará en modo regex hasta que se repare el modelo."
+    )
 
 
-def main():
+def _log_optional_components() -> None:
+    logger = logging.getLogger("velo.startup")
+    try:
+        status = _probe_spacy_safe()
+        for line in status.splitlines():
+            logger.info(line)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Fallo no fatal al comprobar spaCy: %s", exc, exc_info=True)
+
+
+def main() -> None:
     workspace = os.path.join(BASE_DIR, "workspace")
     os.makedirs(workspace, exist_ok=True)
 
-    # Logging antes que nada
     setup_logging(workspace)
     logger = logging.getLogger("velo.startup")
 
@@ -134,32 +164,30 @@ def main():
     print(f"  Logs:      {os.path.join(workspace, 'logs', 'velo.log')}")
     print("  Modo:      LOCAL - Ningún dato sale de tu equipo\n")
     print("  [OK] Capa base: patrones regex")
-
-    # spaCy / NER
-    print(_check_spacy())
+    print("  [..] Comprobando spaCy de forma segura (si falla, Velo seguirá arrancando)")
 
     try:
         import docx  # noqa: F401
         print("  [OK] Soporte DOCX")
-    except ImportError:
+    except Exception:
         print("  [--] Sin soporte DOCX")
 
     try:
         import PyPDF2  # noqa: F401
         print("  [OK] Soporte PDF")
-    except ImportError:
+    except Exception:
         print("  [--] Sin soporte PDF")
 
     try:
         import fitz  # noqa: F401
         print("  [OK] Revisión visual PDF (PyMuPDF)")
-    except ImportError:
+    except Exception:
         print("  [--] Sin revisión visual PDF (opcional)")
 
     try:
         import PIL  # noqa: F401
         print("  [OK] Exportación visual por imagen (Pillow)")
-    except ImportError:
+    except Exception:
         print("  [--] Sin exportación visual por imagen (opcional)")
 
     if server_mode == "waitress":
@@ -167,23 +195,26 @@ def main():
     else:
         print("  [--] waitress no está instalado; arrancando con servidor Flask")
 
-    print("\n  Abriendo navegador...")
+    print("\n  Abriendo navegador cuando el servicio esté listo...")
     print("  Para detener: use el botón 'Apagar' en la interfaz")
     print("                o cierre esta ventana\n")
 
     logger.info(
         "Velo v%s iniciado en http://localhost:%d (servidor=%s)",
-        APP_VERSION, port, server_mode,
+        APP_VERSION,
+        port,
+        server_mode,
     )
 
-    threading.Thread(target=open_browser, args=(port,), daemon=True).start()
+    threading.Thread(target=_log_optional_components, daemon=True).start()
+    threading.Thread(target=open_browser_when_ready, args=(port,), daemon=True).start()
 
     try:
         if serve is not None:
             serve(app, host="127.0.0.1", port=port, threads=4, _quiet=True)
         else:
             app.run(host="127.0.0.1", port=port, debug=False, use_reloader=False)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         logger.critical("El servidor se ha detenido inesperadamente: %s", exc, exc_info=True)
         print(f"\n  [ERROR] El servidor se ha detenido: {exc}\n")
         sys.exit(1)

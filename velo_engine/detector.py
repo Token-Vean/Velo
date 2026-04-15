@@ -4,6 +4,8 @@ Capa base: regex para patrones estructurados españoles.
 Capa opcional: spaCy para NER (nombres, lugares, instituciones).
 """
 
+from __future__ import annotations
+
 import logging
 import re
 from datetime import datetime
@@ -86,6 +88,7 @@ PATTERNS = [
 ]
 
 _DNI_TABLE = "TRWAGMYFPDXBNJZSQVHLCKE"
+_SPACY_ERROR: str | None = None
 
 
 def _normalize_compact(value):
@@ -189,62 +192,77 @@ def detect_regex(text):
 
 
 def _load_spacy_model():
+    global _SPACY_ERROR
     try:
-        import spacy
-    except ImportError:
+        import spacy  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        _SPACY_ERROR = f"{type(exc).__name__}: {exc}"
+        logger.warning("spaCy no disponible o no cargable: %s", exc, exc_info=True)
         return None, None
 
     for model_name in ("es_core_news_md", "es_core_news_sm"):
         try:
             nlp = spacy.load(model_name)
+            _SPACY_ERROR = None
             logger.info("Modelo spaCy cargado: %s", model_name)
             return nlp, model_name
-        except OSError:
+        except Exception as exc:  # noqa: BLE001
+            _SPACY_ERROR = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "spaCy presente, pero el modelo %s no pudo cargarse: %s",
+                model_name,
+                exc,
+                exc_info=True,
+            )
             continue
-    logger.warning("spaCy instalado pero sin modelo español (es_core_news_md / es_core_news_sm)")
+
     return None, None
 
 
 def detect_ner(text, existing_findings=None):
     if existing_findings is None:
         existing_findings = []
+    try:
+        nlp, model_name = _load_spacy_model()
+        if nlp is None:
+            return [], None
 
-    nlp, model_name = _load_spacy_model()
-    if nlp is None:
+        doc = nlp(text)
+        findings = []
+        counter = len(existing_findings)
+        label_map = {
+            "PER": ("person_name", "Nombre persona", "personal"),
+            "ORG": ("org_name", "Organización", "personal"),
+            "LOC": ("location", "Lugar", "contact"),
+            "GPE": ("location", "Lugar", "contact"),
+        }
+
+        for ent in doc.ents:
+            if ent.label_ not in label_map:
+                continue
+            type_id, label, category = label_map[ent.label_]
+            start, end = ent.start_char, ent.end_char
+            if _overlaps(start, end, existing_findings + findings):
+                continue
+            counter += 1
+            findings.append({
+                "id": f"f{counter:03d}",
+                "text": ent.text,
+                "category": category,
+                "type": type_id,
+                "label": label,
+                "description": f"Entidad detectada por NER ({ent.label_})",
+                "position": {"start": start, "end": end},
+                "confidence": round(0.75 + 0.2 * (ent.end - ent.start > 1), 2),
+                "method": "spacy_ner",
+                "status": "pending",
+            })
+        return findings, model_name
+    except Exception as exc:  # noqa: BLE001
+        global _SPACY_ERROR
+        _SPACY_ERROR = f"{type(exc).__name__}: {exc}"
+        logger.warning("Fallo no fatal en detect_ner; se desactiva spaCy: %s", exc, exc_info=True)
         return [], None
-
-    doc = nlp(text)
-    findings = []
-    counter = len(existing_findings)
-    label_map = {
-        "PER": ("person_name", "Nombre persona", "personal"),
-        "ORG": ("org_name", "Organización", "personal"),
-        "LOC": ("location", "Lugar", "contact"),
-        "GPE": ("location", "Lugar", "contact"),
-    }
-
-    for ent in doc.ents:
-        if ent.label_ not in label_map:
-            continue
-        type_id, label, category = label_map[ent.label_]
-        start, end = ent.start_char, ent.end_char
-        if _overlaps(start, end, existing_findings + findings):
-            continue
-        counter += 1
-        findings.append({
-            "id": f"f{counter:03d}",
-            "text": ent.text,
-            "category": category,
-            "type": type_id,
-            "label": label,
-            "description": f"Entidad detectada por NER ({ent.label_})",
-            "position": {"start": start, "end": end},
-            "confidence": round(0.75 + 0.2 * (ent.end - ent.start > 1), 2),
-            "method": "spacy_ner",
-            "status": "pending",
-        })
-
-    return findings, model_name
 
 
 def detect(text):
@@ -270,7 +288,7 @@ def detect(text):
 
 def spacy_status():
     _, model_name = _load_spacy_model()
-    return {"installed": model_name is not None, "model": model_name}
+    return {"installed": model_name is not None, "model": model_name, "error": _SPACY_ERROR}
 
 
 def build_envelope(document_id, findings, layers_active, layers_available):

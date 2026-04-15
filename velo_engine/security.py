@@ -27,6 +27,12 @@ RATE_LIMIT_MAX = 30
 MAX_PDF_PAGES = 500
 
 
+def _default_workspace() -> str:
+    """Devuelve una ruta de workspace segura por defecto."""
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    return os.path.join(base_dir, "workspace")
+
+
 class _RateLimiter:
     def __init__(self):
         self._hits: dict[str, list[float]] = defaultdict(list)
@@ -113,7 +119,10 @@ def _check_auth(app) -> bool:
     )
 
 
-def setup_audit_log(log_dir: str = "./workspace") -> None:
+def setup_audit_log(log_dir: str | None = None) -> None:
+    if not log_dir:
+        log_dir = _default_workspace()
+
     os.makedirs(log_dir, exist_ok=True)
 
     if _audit.handlers:
@@ -143,12 +152,15 @@ def init_security(app):
     """Registra todos los hooks de seguridad en la app Flask."""
     app.secret_key = app.config.get("SECRET_KEY") or secrets.token_hex(32)
 
+    default_workspace = _default_workspace()
+    app.config.setdefault("WORKSPACE", default_workspace)
+
     app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
     app.config.setdefault("SESSION_COOKIE_SAMESITE", "Strict")
     app.config.setdefault("SESSION_COOKIE_SECURE", False)
     app.config.setdefault("SESSION_REFRESH_EACH_REQUEST", False)
 
-    setup_audit_log(app.config.get("WORKSPACE", "./workspace"))
+    setup_audit_log(app.config.get("WORKSPACE", default_workspace))
 
     @app.before_request
     def _security_checks():

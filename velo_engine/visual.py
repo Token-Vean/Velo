@@ -1,3 +1,4 @@
+
 """Herramientas para revision visual y aplicacion de redacciones sobre PDFs.
 
 Genera una representacion por paginas del PDF original, extrae palabras con
@@ -607,6 +608,31 @@ def _signature_for_findings(findings: List[dict]) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
+def _build_pdf_from_images(image_paths: List[str], output_path: str) -> None:
+    """Compone el PDF final con PyMuPDF a partir de PNGs ya redactados.
+
+    Esto evita los fallos intermitentes observados al guardar PDFs multiimagen
+    directamente con Pillow en algunos entornos Windows.
+    """
+    import fitz
+    from PIL import Image
+
+    if not image_paths:
+        raise ValueError("No hay imagenes redactadas para componer el PDF final.")
+
+    pdf = fitz.open()
+    try:
+        for image_path in image_paths:
+            with Image.open(image_path) as image:
+                width, height = image.size
+
+            page = pdf.new_page(width=float(width), height=float(height))
+            page.insert_image(page.rect, filename=image_path)
+        pdf.save(output_path, garbage=4, deflate=True)
+    finally:
+        pdf.close()
+
+
 def apply_redactions_to_original(session_dir: str, session_id: str, findings: List[dict]) -> dict:
     from PIL import Image, ImageDraw
 
@@ -616,21 +642,26 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
         raise ValueError("No hay hallazgos confirmados para aplicar sobre el original.")
 
     assets_dir = _ensure_dirs(session_dir)
-    rendered_pages = []
     page_results = []
+    redacted_paths: List[str] = []
     total_rectangles = 0
 
     for page_meta in metadata.get("pages", []):
         image_path = os.path.join(assets_dir, page_meta["image_name"])
-        image = Image.open(image_path).convert("RGB")
-        draw = ImageDraw.Draw(image)
         rectangles = _rectangles_for_page(page_meta, confirmed)
-        for rect in rectangles:
-            draw.rectangle(rect, fill="black")
-        redacted_name = f"redacted_{page_meta['image_name']}"
-        redacted_path = os.path.join(assets_dir, redacted_name)
-        image.save(redacted_path)
-        rendered_pages.append(image)
+
+        with Image.open(image_path) as base_image:
+            image = base_image.convert("RGB")
+            draw = ImageDraw.Draw(image)
+            for rect in rectangles:
+                draw.rectangle(rect, fill="black")
+
+            redacted_name = f"redacted_{page_meta['image_name']}"
+            redacted_path = os.path.join(assets_dir, redacted_name)
+            image.save(redacted_path)
+            image.close()
+
+        redacted_paths.append(redacted_path)
         total_rectangles += len(rectangles)
         page_results.append(
             {
@@ -643,12 +674,11 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
             }
         )
 
-    if not rendered_pages:
+    if not redacted_paths:
         raise ValueError("No hay paginas renderizadas para aplicar las redacciones.")
 
     output_path = os.path.join(session_dir, APPLIED_PDF_NAME)
-    first, rest = rendered_pages[0], rendered_pages[1:]
-    first.save(output_path, save_all=True, append_images=rest, resolution=150.0)
+    _build_pdf_from_images(redacted_paths, output_path)
 
     applied = {
         "session_id": session_id,

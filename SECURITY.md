@@ -1,56 +1,42 @@
-# Seguridad
+# Security policy and local-use threat model
 
-## Modelo de seguridad
+## Scope
 
-Velo está diseñado para ejecutarse en local. Su objetivo es minimizar la exposición de documentación sensible durante el proceso de revisión archivística.
+Velo is designed for **strictly local and personal use** by a professional user on a workstation. Its default threat model is **not** a public web deployment, a multi-user service, or a network-facing document platform.
 
-### Qué hace
+## Security assumptions
 
-- Escucha solo en `127.0.0.1`.
-- Procesa documentos localmente.
-- Genera copias derivadas redactadas, no modifica el archivo máster original.
-- Mantiene los datos de sesión en `workspace/` únicamente durante la ejecución.
+- The application binds to `127.0.0.1` only.
+- Documents are processed on the local machine.
+- The operator remains responsible for validating detections and exports.
+- Derived outputs must be reviewed before external circulation.
 
-### Qué no hace
+## Hardening choices in this revision
 
-- No cifra automáticamente el `workspace/`.
-- No firma digitalmente la copia derivada resultante.
-- No sustituye la revisión humana ni la validación jurídica del acceso.
-- No debe exponerse a red pública ni desplegarse detrás de un proxy inverso sin endurecimiento adicional.
+- Local-only install with isolated `.venv`.
+- No automatic remote Python bootstrap in Windows installer.
+- CSRF protection and same-origin checks.
+- Security headers and no-store policy on API responses.
+- Rotating audit log under the configured workspace.
+- Ephemeral visual sessions with stale-session cleanup at startup.
+- Defensive DOCX preflight and PDF page limits.
+- OCR timeout to reduce workstation lockups.
 
-## Persistencia de datos
+## Known residual risks
 
-- TXT y DOCX se procesan y el original temporal se elimina tras la extracción de texto.
-- En el flujo visual de PDF, el original se conserva temporalmente dentro de una sesión efímera para poder renderizar la vista y exportar la copia derivada.
-- La carpeta `workspace/` está excluida del control de versiones y no debe subirse al repositorio.
+- Document parsers remain complex third-party dependencies.
+- OCR quality and bbox alignment may vary on degraded scans.
+- This project does not sandbox parser execution at OS level.
+- Local logs and reports remain sensitive and should be handled accordingly.
 
-## Dependencias opcionales
+## Recommended operational controls
 
-La revisión visual utiliza `PyMuPDF` y `Pillow`. El OCR opcional usa `pytesseract` y requiere Tesseract OCR instalado en el sistema.
+- Use on a dedicated professional workstation.
+- Exclude `workspace/` from unnecessary cloud sync or consumer backup tools.
+- Protect the OS account with full-disk encryption.
+- Keep dependencies updated and monitor advisories.
+- Avoid processing untrusted files from unknown sources without prior malware screening.
 
-Antes de activar OCR en entornos institucionales conviene validar:
+## Reporting
 
-- idioma y calidad de reconocimiento;
-- precisión de cajas OCR sobre documentos reales;
-- política de conservación de copias derivadas y trazas;
-- tratamiento de documentos con firma digital o valor probatorio.
-
-## Instaladores
-
-- `install.bat` puede descargar Python embebido y `pip` desde fuentes oficiales por HTTPS.
-- `install.sh` e `install.command` asumen Python ya instalado en el sistema.
-- No hay code signing ni notarización.
-
-## Recomendaciones de despliegue
-
-1. Ejecutar en estación de trabajo dedicada o perfil controlado.
-2. Limpiar periódicamente `workspace/`.
-3. No usar muestras con datos reales para demos públicas.
-4. Añadir auditoría institucional si el proyecto se incorpora a un flujo formal de acceso o transparencia.
-
-
-
-## Auditoría
-
-Consulte [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.md) para el informe completo de la última auditoría de seguridad.
-
+For sensitive security findings, do not publish exploit details in public issue threads before mitigation is prepared.
