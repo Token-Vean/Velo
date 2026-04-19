@@ -1,7 +1,7 @@
 """Constantes de aplicación para Velo."""
 
 APP_NAME = "Velo"
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.4.1"
 MIN_PYTHON = (3, 10)
 
 MAX_CONTENT_LENGTH_MB = 100

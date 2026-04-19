@@ -5,7 +5,7 @@ cd /d "%~dp0"
 
 echo.
 echo  ======================================================
-echo   Velo - Detector de datos sensibles v0.4.0
+echo   Velo - Detector de datos sensibles v0.4.1
 echo  ======================================================
 echo.
 

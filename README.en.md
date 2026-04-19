@@ -6,7 +6,7 @@ Spanish version: [README.md](README.md)
 
 ## Project Status
 
-Current code version: **0.3.0**.
+Current code version: **0.4.1**.
 
 The project is functional for local review and the generation of redacted derivative copies. It should not be presented as automatic proof of regulatory compliance, nor as a substitute for archival, legal, or data protection review.
 
