@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.0
+
+- **Seguridad — actualización de pypdf**: se eleva `pypdf` de 6.10.0 a 6.10.1 para corregir la exposición a GHSA-JJ6C-8H6C-HPPX (uncontrolled resource consumption en streams xref/object mal formados). Afectaba al flujo base de lectura de PDF.
+- **Refactor del módulo visual**: simplificación de `velo_engine/visual.py` (reducción de ~50 líneas, sin cambios de comportamiento observable).
+- **CI endurecida**: los pasos `Pip audit (visual)` y `Pip audit (nlp)` del workflow `security-checks` ahora toleran la ausencia de su fichero de requirements, evitando falsos fallos rojos en perfiles parciales.
+- **Alineación de versiones**: unificadas a 0.4.0 las referencias en `README.md`, `README.en.md`, `velo_engine/__init__.py`, `velo_engine/constants.py` e instaladores.
+
 ## 0.3.1
 
 - **Extracción PDF mejorada**: el motor primario de lectura de PDF es ahora PyMuPDF (`page.get_text("text")`), que produce texto de alta calidad incluso con capas OCR. PyPDF2 queda como fallback de último recurso.

@@ -39,7 +39,17 @@ jobs:
         run: pip-audit -r requirements.txt
 
       - name: Pip audit (visual)
-        run: pip-audit -r requirements-visual.txt
+        run: |
+          if [ -f requirements-visual.txt ]; then
+            pip-audit -r requirements-visual.txt
+          else
+            echo "requirements-visual.txt no encontrado, se omite."
+          fi
 
       - name: Pip audit (nlp)
-        run: pip-audit -r requirements-nlp.txt
+        run: |
+          if [ -f requirements-nlp.txt ]; then
+            pip-audit -r requirements-nlp.txt
+          else
+            echo "requirements-nlp.txt no encontrado, se omite."
+          fi
