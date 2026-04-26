@@ -1,3 +1,7 @@
+
+<p align="center">
+  <img src="/velo_engine/static/logo.png" alt="Tipo" width="600">
+</p>
 # Velo
 
 Herramienta local para archiveros y profesionales de la gestión documental orientada a **detectar, revisar y redactar** datos sensibles en documentos.
