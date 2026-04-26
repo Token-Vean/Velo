@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="/velo_engine/static/logo.png" alt="Tipo" width="600">
+  <img src="/velo_engine/static/logo.png" alt="Velo" width="600">
 </p>
 # Velo
 
