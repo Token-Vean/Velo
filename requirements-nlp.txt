@@ -1,2 +1,2 @@
 # Velo - Dependencias NLP opcionales
-spacy>=3.7,<4.0
+spacy>=3.8.14,<4.0
