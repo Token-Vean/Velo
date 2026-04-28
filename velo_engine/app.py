@@ -22,6 +22,7 @@ from velo_engine.constants import (
     SESSION_TTL_HOURS,
 )
 from velo_engine.detector import build_envelope, detect, spacy_status
+from velo_engine.file_guard import FileValidationError, validate_uploaded_file
 from velo_engine.reader import read_file, supported_extensions
 from velo_engine.security import init_security, log_audit, hash_text
 from velo_engine.visual import (
@@ -89,6 +90,25 @@ def _cleanup_session(session_id: str | None) -> None:
     path = os.path.abspath(os.path.join(_sessions_root(), safe_id))
     if path.startswith(_sessions_root()) and os.path.isdir(path):
         shutil.rmtree(path, ignore_errors=True)
+
+
+def _log_file_guard_warnings(warnings: tuple[str, ...] | list[str]) -> None:
+    """Registra advertencias locales no bloqueantes emitidas por file_guard."""
+    for warning in warnings:
+        logger.warning("Advertencia de entorno local: %s", warning)
+
+
+def _remove_temp_file(filepath: str) -> None:
+    """Elimina un fichero temporal sin ocultar errores en el log."""
+    try:
+        os.remove(filepath)
+    except OSError as exc:
+        logger.debug(
+            "No se pudo eliminar el fichero temporal %s: %s",
+            filepath,
+            exc,
+            exc_info=True,
+        )
 
 
 def prune_stale_sessions(ttl_hours: int = SESSION_TTL_HOURS) -> int:
@@ -185,6 +205,18 @@ def analyze_file():
         file.save(pdf_path)
 
         try:
+            validation = validate_uploaded_file(
+                pdf_path,
+                original_name,
+                max_bytes=app.config.get("MAX_CONTENT_LENGTH"),
+            )
+            _log_file_guard_warnings(validation.warnings)
+        except FileValidationError as exc:
+            logger.warning("Fichero rechazado por validación previa: %s", exc.safe_message)
+            _cleanup_session(session_id)
+            return jsonify({"error": exc.safe_message}), 400
+
+        try:
             text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
         except Exception:
             logger.exception(
@@ -234,17 +266,21 @@ def analyze_file():
     file.save(filepath)
 
     try:
+        validation = validate_uploaded_file(
+            filepath,
+            original_name,
+            max_bytes=app.config.get("MAX_CONTENT_LENGTH"),
+        )
+        _log_file_guard_warnings(validation.warnings)
+    except FileValidationError as exc:
+        logger.warning("Fichero rechazado por validación previa: %s", exc.safe_message)
+        _remove_temp_file(filepath)
+        return jsonify({"error": exc.safe_message}), 400
+
+    try:
         text, fmt, error = read_file(filepath)
     finally:
-        try:
-            os.remove(filepath)
-        except OSError as exc:
-            logger.debug(
-                "No se pudo eliminar el fichero temporal %s: %s",
-                filepath,
-                exc,
-                exc_info=True,
-            )
+        _remove_temp_file(filepath)
 
     if error:
         logger.warning("Error en extracción de fichero: %s (fichero=%s)", error, original_name)
