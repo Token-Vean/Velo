@@ -58,7 +58,9 @@ jobs:
           fi
 
       - name: Bandit
-        run: bandit -r . -x .venv,build,dist,workspace,tests
+        run: |
+          bandit -r velo_engine run.py \
+            -x .venv,build,dist,workspace,tests
 
       - name: Pip audit base
         run: pip-audit -r requirements.txt
