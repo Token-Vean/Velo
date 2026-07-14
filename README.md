@@ -14,7 +14,7 @@ La herramienta **asiste** al proceso, pero **no sustituye la decisión profesion
 
 ## Estado del proyecto
 
-Versión actual del código: **0.4.1**.
+Versión actual del código: **0.5.0**.
 
 Esta revisión deja el proyecto mejor alineado en varias capas:
 

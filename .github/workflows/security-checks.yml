@@ -23,7 +23,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -68,6 +68,11 @@ jobs:
 
       - name: Pip audit base
         run: pip-audit -r requirements.txt
+
+      - name: Pip audit entorno resuelto
+        # Audita también las dependencias transitivas realmente instaladas
+        # (lxml, certifi, etc.), que -r sobre los requirements no cubre.
+        run: pip-audit --skip-editable
 
       - name: Pip audit visual
         run: |

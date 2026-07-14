@@ -4,7 +4,7 @@ cd "$(dirname "$0")"
 
 echo
 echo "======================================================"
-echo " Velo - Detector de datos sensibles v0.4.1"
+echo " Velo - Detector de datos sensibles v0.5.0"
 echo "======================================================"
 echo
 

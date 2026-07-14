@@ -1,5 +1,47 @@
 # Changelog
 
+## 0.5.0
+
+- **Seguridad — actualización de dependencias**: `pypdf` 6.12.0 → 6.14.2 (corrige
+  CVE-2026-48735, CVE-2026-49460, CVE-2026-49461, CVE-2026-54530, CVE-2026-54531 y
+  CVE-2026-54651, todas de denegación de servicio con PDF manipulados; las de
+  extracción de texto afectaban al motor fallback de Velo). `Pillow` 12.2.0 → 12.3.0
+  (bypass de la protección anti-bomba de descompresión: CVE-2026-54060,
+  CVE-2026-55379, CVE-2026-55380). `PyMuPDF` 1.27.2 → 1.28.0 (MuPDF 1.28 con
+  correcciones de endurecimiento de seguridad).
+- **Expurgo nativo de PDF (nuevo)**: nuevo modo `redaction_mode: "native"` en
+  `/api/export/redacted-pdf`, basado en `add_redact_annot` + `apply_redactions`
+  de PyMuPDF. A diferencia del modo imagen, el texto subyacente se **elimina**
+  del fichero (no solo se tapa), el PDF conserva su capa de texto y naturaleza
+  vectorial, y se purgan los metadatos del documento (autor, software, XMP) en
+  la copia derivada. El modo imagen sigue siendo el predeterminado. Los modos
+  disponibles se anuncian en `/api/status` → `visual_redaction.modes`.
+- **OCR con timeout efectivo**: la constante `OCR_TIMEOUT_SECONDS` (25 s) ahora
+  se aplica realmente a la llamada a Tesseract. Antes una página escaneada
+  hostil o degenerada podía bloquear un hilo del servidor indefinidamente; ahora
+  la página se trata como sin texto y se registra el aborto.
+- **Rate limiting corregido**: los GET de assets de sesión (una imagen por
+  página) quedan exentos del limitador; un PDF legítimo de más de ~30 páginas
+  disparaba un 429 al cargar la revisión visual.
+- **Comprobaciones de ruta robustas**: las validaciones de contención de rutas
+  (`_session_dir`, limpieza de sesiones, exportación) usan `os.path.commonpath`
+  en lugar de `startswith`, eliminando el problema clásico de prefijo.
+- **Purga de informes exportados**: los `*_pii_report.json` del workspace se
+  purgan con el mismo TTL que las sesiones (`EXPORT_REPORT_TTL_HOURS`); hasta
+  ahora se acumulaban indefinidamente.
+- **Detector — validación NSS**: los números de la Seguridad Social con formato
+  canónico de 12 dígitos se validan por dígitos de control (módulo 97),
+  reduciendo falsos positivos con numeraciones de expediente.
+- **Corrección**: en la ruta de error "PDF sin texto extraíble" se accedía a
+  `document.page_count` después de `document.close()`, lo que provocaba una
+  excepción secundaria en PyMuPDF.
+- **CI endurecida**: `actions/checkout` v5 → v7 y nuevo paso `pip-audit` sobre
+  el entorno resuelto para auditar también dependencias transitivas.
+- **Deuda conocida (documentada, no resuelta)**: la CSP mantiene
+  `script-src 'unsafe-inline'` porque la interfaz usa 26 manejadores de eventos
+  inline, varios generados dinámicamente. La migración a delegación de eventos
+  + nonce queda planificada para 0.5.x.
+
 ## 0.4.0
 
 - **Seguridad — actualización de pypdf**: se eleva `pypdf` de 6.10.0 a 6.10.1 para corregir la exposición a GHSA-JJ6C-8H6C-HPPX (uncontrolled resource consumption en streams xref/object mal formados). Afectaba al flujo base de lectura de PDF.

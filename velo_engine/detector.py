@@ -139,6 +139,23 @@ def _valid_luhn(value):
     return total % 10 == 0
 
 
+def _valid_nss(value):
+    """Valida los dígitos de control del Número de la Seguridad Social.
+
+    Formato canónico: PP NNNNNNNN CC (12 dígitos). Los dos últimos dígitos
+    son el resto de dividir los diez primeros entre 97. Solo se valida
+    cuando el número normalizado tiene exactamente 12 dígitos; con otras
+    longitudes (formatos antiguos o parciales) se acepta el hallazgo para
+    no descartar posibles verdaderos positivos.
+    """
+    digits = re.sub(r"\D", "", value or "")
+    if len(digits) != 12:
+        return True
+    base = int(digits[:10])
+    control = int(digits[10:])
+    return base % 97 == control
+
+
 def _validate_match(pattern_id, raw_text):
     if pattern_id == "dni":
         return _valid_dni(raw_text)
@@ -148,6 +165,8 @@ def _validate_match(pattern_id, raw_text):
         return _valid_iban(raw_text)
     if pattern_id == "credit_card":
         return _valid_luhn(raw_text)
+    if pattern_id == "nss":
+        return _valid_nss(raw_text)
     return True
 
 

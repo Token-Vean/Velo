@@ -80,6 +80,10 @@ def visual_capabilities() -> dict:
         logger.debug("pytesseract no disponible: %s", exc, exc_info=True)
         caps["pytesseract"] = False
         caps["tesseract_ready"] = False
+
+    # El expurgo nativo (eliminación real del texto subyacente mediante
+    # apply_redactions de PyMuPDF) solo requiere fitz.
+    caps["native_redaction"] = caps["fitz"]
     return caps
 
 
@@ -210,8 +214,30 @@ def _words_from_ocr(image_path: str) -> List[dict]:
     import pytesseract
     from pytesseract import Output
 
+    from velo_engine.constants import OCR_TIMEOUT_SECONDS
+
     image = Image.open(image_path)
-    data = pytesseract.image_to_data(image, output_type=Output.DICT)
+    try:
+        data = pytesseract.image_to_data(
+            image,
+            output_type=Output.DICT,
+            timeout=OCR_TIMEOUT_SECONDS,
+        )
+    except RuntimeError as exc:
+        # pytesseract lanza RuntimeError al agotarse el timeout. La página
+        # se trata como sin texto en lugar de bloquear un hilo del servidor
+        # indefinidamente con una imagen hostil o degenerada.
+        logger.warning(
+            "OCR abortado por timeout (%ds) en %s: %s",
+            OCR_TIMEOUT_SECONDS, os.path.basename(image_path), exc,
+        )
+        return []
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "OCR fallido en %s: %s",
+            os.path.basename(image_path), exc, exc_info=True,
+        )
+        return []
     words = []
     count = len(data.get("text", []))
     for idx in range(count):
@@ -480,13 +506,14 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
             }
         )
 
+    page_count = document.page_count
     document.close()
 
     if not any_text:
         logger.warning(
             "PDF sin texto extraible: %d paginas, %.1f MB, sesion=%s. "
             "Sugerencia: instalar Tesseract OCR.",
-            document.page_count, file_size_mb, session_id,
+            page_count, file_size_mb, session_id,
         )
         return (
             None,
@@ -670,3 +697,99 @@ def export_visual_redacted_pdf(session_dir: str, findings: List[dict], output_pa
         with open(generated, "rb") as src, open(output_path, "wb") as dst:
             dst.write(src.read())
     return output_path
+
+
+# ---------------------------------------------------------------------------
+# Expurgo nativo (v0.5.0)
+# ---------------------------------------------------------------------------
+
+def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_path: str) -> dict:
+    """Expurgo real sobre una copia del PDF original.
+
+    A diferencia del modo imagen (que rasteriza cada página y tapa con
+    rectángulos), este modo usa ``add_redact_annot`` + ``apply_redactions``
+    de PyMuPDF, que ELIMINA el texto e imágenes subyacentes en las zonas
+    marcadas: el contenido testado deja de existir en el fichero y no puede
+    recuperarse copiando texto ni inspeccionando el stream. El resultado
+    conserva la naturaleza vectorial y la capa de texto del resto del
+    documento (buscable, accesible y mucho más ligero que la copia imagen).
+
+    Las coordenadas de los hallazgos están almacenadas en el espacio de la
+    imagen renderizada (escala TEXT_RENDER_SCALE); se reconvierten a puntos
+    PDF dividiendo por esa escala.
+
+    Devuelve un dict con estadísticas de la operación.
+    """
+    import fitz
+
+    metadata = load_session_metadata(session_dir)
+    confirmed = _confirmed_findings(findings)
+    if not confirmed:
+        raise ValueError("No hay hallazgos confirmados para el expurgo nativo.")
+
+    original_path = os.path.join(session_dir, "original.pdf")
+    if not os.path.exists(original_path):
+        raise FileNotFoundError("No se encuentra el PDF original de la sesión.")
+
+    document = fitz.open(original_path)
+    try:
+        total_rectangles = 0
+        pages_touched = 0
+
+        pages_meta = {p["page"]: p for p in metadata.get("pages", [])}
+
+        for page_index in range(document.page_count):
+            page_meta = pages_meta.get(page_index + 1)
+            if not page_meta:
+                continue
+
+            rectangles = _rectangles_for_page(page_meta, confirmed)
+            if not rectangles:
+                continue
+
+            page = document.load_page(page_index)
+            for rect in rectangles:
+                pdf_rect = fitz.Rect(
+                    rect[0] / TEXT_RENDER_SCALE,
+                    rect[1] / TEXT_RENDER_SCALE,
+                    rect[2] / TEXT_RENDER_SCALE,
+                    rect[3] / TEXT_RENDER_SCALE,
+                )
+                page.add_redact_annot(pdf_rect, fill=(0, 0, 0))
+                total_rectangles += 1
+
+            # apply_redactions elimina texto, vectores y recorta imágenes
+            # bajo las anotaciones de redacción antes de aplanarlas.
+            page.apply_redactions()
+            pages_touched += 1
+
+        if total_rectangles == 0:
+            raise ValueError(
+                "Ningún hallazgo confirmado pudo proyectarse sobre el PDF original."
+            )
+
+        # Higiene de la copia derivada: se elimina la metainformación del
+        # original (autor, software, XMP), que puede contener datos personales.
+        document.set_metadata({})
+        try:
+            document.del_xml_metadata()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("No se pudo eliminar metadatos XMP: %s", exc, exc_info=True)
+
+        document.save(output_path, garbage=4, deflate=True)
+    finally:
+        document.close()
+
+    result = {
+        "mode": "native",
+        "pages_touched": pages_touched,
+        "total_rectangles": total_rectangles,
+        "findings_signature": _signature_for_findings(findings),
+        "text_removed": True,
+        "metadata_stripped": True,
+    }
+    logger.info(
+        "Expurgo nativo aplicado: %d rectángulos en %d páginas -> %s",
+        total_rectangles, pages_touched, os.path.basename(output_path),
+    )
+    return result

@@ -1,4 +1,7 @@
 # Velo - Dependencias visuales opcionales
-PyMuPDF==1.27.2
-Pillow==12.2.0
+# MuPDF 1.28.0 incorpora correcciones de endurecimiento de seguridad.
+PyMuPDF==1.28.0
+# Pillow 12.3.0 corrige bypass de la proteccion anti-bomba de descompresion
+# (CVE-2026-54060, CVE-2026-55379, CVE-2026-55380).
+Pillow==12.3.0
 pytesseract==0.3.13

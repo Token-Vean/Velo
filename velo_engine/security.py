@@ -168,7 +168,17 @@ def init_security(app):
 
         g.csrf_token = _generate_csrf_token()
 
-        if not _limiter.check(ip):
+        # Los GET de assets de sesión (una imagen PNG por página) quedan
+        # exentos del rate limiter: un PDF de 40 páginas legítimo superaría
+        # el límite global solo con cargar la revisión visual. Siguen
+        # protegidos por autenticación y por el saneado de rutas en app.py.
+        is_session_asset = (
+            request.method == "GET"
+            and request.path.startswith("/api/session/")
+            and "/asset/" in request.path
+        )
+
+        if not is_session_asset and not _limiter.check(ip):
             logger.warning("Rate limit: %s", ip)
             return jsonify({"error": "Demasiadas peticiones."}), 429
 

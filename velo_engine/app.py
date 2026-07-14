@@ -17,6 +17,7 @@ from werkzeug.utils import secure_filename
 
 from velo_engine.constants import (
     APP_VERSION,
+    EXPORT_REPORT_TTL_HOURS,
     MAX_CONTENT_LENGTH,
     MAX_TEXT_LENGTH,
     SESSION_TTL_HOURS,
@@ -27,6 +28,7 @@ from velo_engine.reader import read_file, supported_extensions
 from velo_engine.security import init_security, log_audit, hash_text
 from velo_engine.visual import (
     apply_redactions_to_original,
+    export_native_redacted_pdf,
     export_visual_redacted_pdf,
     load_applied_metadata,
     read_pdf_for_visual_review,
@@ -56,6 +58,23 @@ def _sanitize_id(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_\-]", "", value or "")[:64]
 
 
+def _is_within(root: str, path: str) -> bool:
+    """Comprueba que ``path`` está contenido en ``root``.
+
+    Sustituye a las comprobaciones ``startswith(root)``, vulnerables al
+    clásico problema de prefijo (``/workspace-otro`` pasa un filtro
+    ``startswith('/workspace')``). ``commonpath`` compara componentes de
+    ruta completos.
+    """
+    try:
+        root_abs = os.path.abspath(root)
+        path_abs = os.path.abspath(path)
+        return os.path.commonpath([root_abs, path_abs]) == root_abs
+    except ValueError:
+        # Unidades distintas en Windows u otras rutas incomparables.
+        return False
+
+
 def _workspace_dir() -> str:
     workspace = app.config.get("WORKSPACE", os.path.join(os.path.dirname(__file__), "..", "workspace"))
     workspace = os.path.abspath(workspace)
@@ -74,7 +93,7 @@ def _session_dir(session_id: str, *, create: bool = True) -> str:
     if not safe_id:
         raise ValueError("session_id inválido")
     directory = os.path.abspath(os.path.join(_sessions_root(), safe_id))
-    if not directory.startswith(_sessions_root()):
+    if not _is_within(_sessions_root(), directory):
         raise ValueError("Ruta de sesión inválida")
     if create:
         os.makedirs(directory, exist_ok=True)
@@ -88,7 +107,7 @@ def _cleanup_session(session_id: str | None) -> None:
     if not safe_id:
         return
     path = os.path.abspath(os.path.join(_sessions_root(), safe_id))
-    if path.startswith(_sessions_root()) and os.path.isdir(path):
+    if _is_within(_sessions_root(), path) and os.path.isdir(path):
         shutil.rmtree(path, ignore_errors=True)
 
 
@@ -127,6 +146,40 @@ def prune_stale_sessions(ttl_hours: int = SESSION_TTL_HOURS) -> int:
             shutil.rmtree(path, ignore_errors=True)
             removed += 1
 
+    return removed
+
+
+def prune_stale_export_reports(ttl_hours: int = EXPORT_REPORT_TTL_HOURS) -> int:
+    """Purga informes ``*_pii_report.json`` antiguos del workspace.
+
+    Hasta la 0.4.x estos informes se acumulaban indefinidamente; además de
+    consumir disco, son metadatos sensibles (texto de los hallazgos) que no
+    deben persistir más de lo necesario en una herramienta local-first.
+    """
+    workspace = _workspace_dir()
+    cutoff = time.time() - ttl_hours * 3600
+    removed = 0
+
+    try:
+        names = os.listdir(workspace)
+    except OSError:
+        return 0
+
+    for name in names:
+        if not name.endswith("_pii_report.json"):
+            continue
+        path = os.path.join(workspace, name)
+        if not os.path.isfile(path) or not _is_within(workspace, path):
+            continue
+        try:
+            if os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        except OSError:
+            continue
+
+    if removed:
+        logger.info("Informes de exportación antiguos eliminados: %d", removed)
     return removed
 
 
@@ -326,12 +379,13 @@ def export_envelope():
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
     log_audit("export", f"DOC={document_id} FINDINGS={len(findings)}")
+    prune_stale_export_reports()
     envelope = build_envelope(document_id, findings, layers_active, layers_available)
     workspace = _workspace_dir()
     export_filename = f"{document_id}_pii_report.json"
     export_path = os.path.join(workspace, export_filename)
 
-    if not os.path.abspath(export_path).startswith(workspace):
+    if not _is_within(workspace, export_path):
         return jsonify({"error": "Ruta de exportación no válida."}), 400
 
     with open(export_path, "w", encoding="utf-8") as f_handle:
@@ -409,14 +463,35 @@ def export_redacted_pdf():
     session_dir = _session_dir(session_id, create=False)
     if not os.path.isdir(session_dir):
         return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
-    output_name = f"{document_id or 'DOC'}_visual_redacted.pdf"
+
+    # Dos modos de exportación (v0.5.0):
+    #   - "image" (por defecto, comportamiento histórico): copia rasterizada
+    #     por página con las máscaras pintadas. Inmune a errores de capa de
+    #     texto, pero pierde la capa textual y pesa más.
+    #   - "native": expurgo real con apply_redactions de PyMuPDF. El texto
+    #     subyacente se ELIMINA del fichero (no solo se tapa) y el PDF
+    #     resultante conserva su naturaleza vectorial y su capa de texto.
+    redaction_mode = (data.get("redaction_mode") or "image").strip().lower()
+    if redaction_mode not in ("image", "native"):
+        return jsonify({"error": "Modo de redacción no válido. Use 'image' o 'native'."}), 400
+
+    suffix = "native_redacted" if redaction_mode == "native" else "visual_redacted"
+    output_name = f"{document_id or 'DOC'}_{suffix}.pdf"
     output_path = os.path.join(session_dir, output_name)
 
     try:
-        export_visual_redacted_pdf(session_dir, findings, output_path)
+        if redaction_mode == "native":
+            native_stats = export_native_redacted_pdf(session_dir, findings, output_path)
+            log_audit(
+                "export_native_pdf",
+                f"DOC={document_id} RECT={native_stats['total_rectangles']} "
+                f"PAGES={native_stats['pages_touched']}",
+            )
+        else:
+            export_visual_redacted_pdf(session_dir, findings, output_path)
     except Exception:
-        logger.exception("No se pudo exportar el PDF visual")
-        return jsonify({"error": "No se pudo exportar el PDF visual."}), 400
+        logger.exception("No se pudo exportar el PDF (modo=%s)", redaction_mode)
+        return jsonify({"error": "No se pudo exportar el PDF redactado."}), 400
 
     with open(output_path, "rb") as handle:
         pdf_bytes = handle.read()
@@ -476,7 +551,11 @@ def status():
                 "fitz": visual.get("fitz"),
                 "pillow": visual.get("pillow"),
                 "ocr": visual.get("tesseract_ready"),
-                "note": "La revisión visual de PDF usa la imagen original por página y coordina los tachados con la base textual/OCR de esa misma sesión.",
+                "modes": {
+                    "image": bool(visual.get("fitz") and visual.get("pillow")),
+                    "native": bool(visual.get("native_redaction")),
+                },
+                "note": "La revisión visual de PDF usa la imagen original por página y coordina los tachados con la base textual/OCR de esa misma sesión. El modo 'native' elimina realmente el texto subyacente (expurgo ISO/IEC 27038) en lugar de taparlo.",
             },
         }
     )
