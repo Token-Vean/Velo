@@ -83,3 +83,74 @@ def test_prune_export_reports(tmp_path):
     assert not viejo.exists()
     assert nuevo.exists()
     assert otro.exists()
+
+
+# ---------------------------------------------------------------------------
+# Regresiones de PDF: límite de páginas y expurgo nativo
+# ---------------------------------------------------------------------------
+
+fitz = pytest.importorskip("fitz")
+
+from velo_engine import visual as visual_module  # noqa: E402
+
+
+def test_pdf_sobredimensionado_devuelve_error_controlado(tmp_path, monkeypatch):
+    monkeypatch.setattr(visual_module, "MAX_PDF_PAGES_VISUAL", 1)
+    pdf_path = tmp_path / "dos-paginas.pdf"
+
+    document = fitz.open()
+    document.new_page()
+    document.new_page()
+    document.save(pdf_path)
+    document.close()
+
+    text, fmt, error, metadata = visual_module.read_pdf_for_visual_review(
+        str(pdf_path), str(tmp_path), "limite",
+    )
+
+    assert text is None
+    assert fmt == "pdf"
+    assert error == "PDF con 2 paginas. Maximo: 1."
+    assert metadata is None
+
+
+def test_expurgo_nativo_elimina_texto_y_metadatos(tmp_path):
+    pdf_path = tmp_path / "original.pdf"
+    document = fitz.open()
+    page = document.new_page()
+    page.insert_text((72, 72), "Nombre Victor Villapalos")
+    document.set_metadata({"author": "Autor sensible"})
+    document.save(pdf_path)
+    document.close()
+
+    text, fmt, error, metadata = visual_module.read_pdf_for_visual_review(
+        str(pdf_path), str(tmp_path), "expurgo",
+    )
+    assert fmt == "pdf"
+    assert error is None
+    assert metadata["page_count"] == 1
+
+    start = text.index("Victor")
+    findings = [
+        {
+            "id": "f001",
+            "status": "confirmed",
+            "position": {"start": start, "end": start + len("Victor Villapalos")},
+            "technique": "suppression",
+        }
+    ]
+    output_path = tmp_path / "native-redacted.pdf"
+    stats = visual_module.export_native_redacted_pdf(
+        str(tmp_path), findings, str(output_path),
+    )
+
+    redacted = fitz.open(output_path)
+    remaining_text = "".join(page.get_text("text") for page in redacted)
+    metadata = redacted.metadata
+    redacted.close()
+
+    assert stats["text_removed"] is True
+    assert stats["metadata_stripped"] is True
+    assert "Victor" not in remaining_text
+    assert "Villapalos" not in remaining_text
+    assert metadata.get("author", "") == ""

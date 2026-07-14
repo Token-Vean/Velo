@@ -1,0 +1,17 @@
+VELO 0.5.0 - ARCHIVOS CORREGIDOS
+=================================
+
+Copie cada archivo conservando exactamente su ruta dentro del repositorio:
+
+1. .github/workflows/security-checks.yml
+2. CHANGELOG.md
+3. README.en.md
+4. README.md
+5. tests/test_v050.py
+6. velo_engine/templates/index.html
+7. velo_engine/visual.py
+
+Después de subirlos, GitHub Actions debe ejecutar de nuevo el workflow
+security-checks. Compruebe que finalizan correctamente pip-audit (base,
+entorno resuelto, visual y NLP) y Gitleaks.
+

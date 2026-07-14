@@ -23,8 +23,8 @@ The project is functional for local review and the generation of redacted deriva
 2. **Analysis:** automatic detection of sensitive data.
 3. **Textual review:** confirm, reject, or manually mark findings.
 4. **Original PDF view:** preview masks over the original PDF image when visual support is available.
-5. **Application to the original:** apply the redaction to a derivative copy of the original PDF.
-6. **Export:** download the JSON report and, depending on the case, either a redacted text copy or a visually redacted PDF.
+5. **Application to the original:** preview and materialize redactions in a rasterized derivative copy of the original PDF.
+6. **Export:** download the JSON report, a redacted text copy, a rasterized PDF, or a native-redacted PDF that removes underlying content while preserving the remaining text layer.
 
 ## Current Capabilities
 
@@ -50,12 +50,13 @@ The project is functional for local review and the generation of redacted deriva
 - **DOCX:** text extraction via `python-docx`
 - **PDF with text layer:** text extraction and visual alignment via `PyMuPDF`
 - **Scanned PDF:** optional support with local OCR using `pytesseract` plus Tesseract installed on the system
+- **Native PDF redaction:** removal of underlying content with `PyMuPDF`, including document metadata cleanup
 
 ## Requirements
 
 ### Core
 
-- Python 3.9 or higher
+- Python 3.10 or higher
 - Dependencies listed in `requirements.txt`
 
 ### Visual/OCR (optional)
@@ -79,7 +80,7 @@ Run:
 install.bat
 ```
 
-The installer attempts to use the system Python installation. If no compatible version is found, it offers to download the embedded Python distribution from `python.org`.
+The installer uses a compatible Python installation already present on the system. It does not download or bootstrap Python automatically.
 
 ### macOS
 
@@ -112,7 +113,7 @@ python run.py
 
 ```text
 velo/
-├── .github/workflows/python-smoke.yml
+├── .github/workflows/security-checks.yml
 ├── build.py
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md

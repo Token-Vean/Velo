@@ -31,6 +31,7 @@ Esta revisión deja el proyecto mejor alineado en varias capas:
 - **Procesamiento local**: la aplicación escucha en `127.0.0.1`.
 - **Revisión humana obligatoria**: Velo detecta y propone; el archivero valida.
 - **No altera el máster original**: cuando redacta un PDF, genera una **copia derivada**.
+- **Dos salidas PDF**: permite generar una copia visual rasterizada o un expurgo nativo que elimina el contenido subyacente y conserva la capa de texto no afectada.
 - **Trazabilidad**: el informe JSON conserva hallazgos, decisiones y metadatos.
 - **Persistencia mínima**: los temporales no visuales se eliminan y las sesiones visuales son efímeras.
 

@@ -398,13 +398,14 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
 
     assets_dir = _ensure_dirs(session_dir)
     document = fitz.open(filepath)
-    if document.page_count > MAX_PDF_PAGES_VISUAL:
+    page_count = document.page_count
+    if page_count > MAX_PDF_PAGES_VISUAL:
         logger.warning(
             "PDF rechazado por exceso de paginas: %d (max: %d), tamanio=%.1f MB, sesion=%s",
-            document.page_count, MAX_PDF_PAGES_VISUAL, file_size_mb, session_id,
+            page_count, MAX_PDF_PAGES_VISUAL, file_size_mb, session_id,
         )
         document.close()
-        return None, "pdf", f"PDF con {document.page_count} paginas. Maximo: {MAX_PDF_PAGES_VISUAL}.", None
+        return None, "pdf", f"PDF con {page_count} paginas. Maximo: {MAX_PDF_PAGES_VISUAL}.", None
 
     logger.info("PDF abierto: %d paginas, %.1f MB, sesion=%s", document.page_count, file_size_mb, session_id)
     pages = []
@@ -506,7 +507,6 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
             }
         )
 
-    page_count = document.page_count
     document.close()
 
     if not any_text:

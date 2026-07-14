@@ -680,8 +680,9 @@
             <button class="btn" id="btnSave" disabled onclick="saveJSON(this)">Guardar informe</button>
             <button class="btn" id="btnDerivedPdf" disabled onclick="exportDerivedPDF()">Generar copia textual</button>
             <button class="btn btn-accent hidden" id="btnAppliedPdf" disabled onclick="downloadAppliedOriginal(this)">Descargar original editado</button>
+            <button class="btn btn-accent hidden" id="btnNativePdf" disabled onclick="downloadNativeRedactedPdf(this)">Descargar PDF con expurgo nativo</button>
         </div>
-        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la redacción visual del PDF se aplica en una copia derivada del original y se materializa antes de la exportación final.</div>
+        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la copia visual rasteriza las páginas y materializa máscaras negras. El expurgo nativo elimina el contenido subyacente en las zonas confirmadas y conserva la capa de texto del resto del PDF.</div>
         <div class="info-box neutral" style="margin-top:6px;"><strong>ISO/IEC 20889:</strong> el informe conserva la técnica seleccionada para cada hallazgo, aunque la materialización visual del PDF original se realiza como tachado gráfico.</div>
     </div>
 
@@ -736,6 +737,7 @@
         let visualMode = null;
         let visualOcrUsed = false;
         let visualReason = "";
+        let nativeRedactionAvailable = false;
         let currentFormat = "txt";
         let appliedOriginal = null;
         let appliedSignature = null;
@@ -1344,14 +1346,17 @@
             document.getElementById("chkReview").checked = false;
             document.getElementById("chkRisk").checked = false;
             document.getElementById("btnAppliedPdf").classList.toggle("hidden", !visualAvailable);
+            document.getElementById("btnNativePdf").classList.toggle("hidden", !visualAvailable || !nativeRedactionAvailable);
             checkCompliance();
         }
 
         function checkCompliance() {
             const ok = document.getElementById("chkPurpose").checked && document.getElementById("chkReview").checked && document.getElementById("chkRisk").checked;
+            const hasConfirmed = findings.some(f => f.status === "confirmed");
             document.getElementById("btnSave").disabled = !ok;
             document.getElementById("btnDerivedPdf").disabled = !ok;
             document.getElementById("btnAppliedPdf").disabled = !ok || (visualAvailable && !appliedOriginal);
+            document.getElementById("btnNativePdf").disabled = !ok || !visualAvailable || !nativeRedactionAvailable || !hasConfirmed;
         }
 
         async function saveJSON(button) {
@@ -1447,6 +1452,57 @@
             }
         }
 
+        async function downloadNativeRedactedPdf(button) {
+            if (!visualSession || !nativeRedactionAvailable) return;
+            if (!findings.some(f => f.status === "confirmed")) {
+                alert("Confirme al menos un hallazgo antes de generar el expurgo nativo.");
+                return;
+            }
+
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = "Expurgando...";
+            try {
+                const documentId = `DOC-${Date.now().toString(36).toUpperCase()}`;
+                const response = await apiFetch("/api/export/redacted-pdf", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        session_id: visualSession,
+                        document_id: documentId,
+                        findings,
+                        redaction_mode: "native"
+                    })
+                });
+                if (!response.ok) {
+                    let message = "No se pudo generar el PDF con expurgo nativo.";
+                    try {
+                        const data = await response.json();
+                        if (data.error) message = data.error;
+                    } catch (_) { }
+                    throw new Error(message);
+                }
+
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `${documentId}_native_redacted.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(url);
+                button.textContent = "Descargado";
+                setTimeout(() => button.textContent = original, 1400);
+            } catch (err) {
+                button.textContent = original;
+                alert("Error: " + err.message);
+            } finally {
+                button.disabled = false;
+                checkCompliance();
+            }
+        }
+
         async function resetAll() {
             await cleanupVisualSession();
             currentStep = 0;
@@ -1510,6 +1566,8 @@
                     let label = "LOCAL";
                     if (d.layers && d.layers.spacy && d.layers.spacy_model) label += " + NER";
                     if (d.visual_redaction && d.visual_redaction.implemented) label += " + PDF";
+                    nativeRedactionAvailable = Boolean(d.visual_redaction && d.visual_redaction.modes && d.visual_redaction.modes.native);
+                    if (nativeRedactionAvailable) label += " + EXPURGO";
                     document.getElementById("statusLabel").textContent = label;
                 })
                 .catch(() => { });

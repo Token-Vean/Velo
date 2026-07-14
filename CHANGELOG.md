@@ -37,6 +37,14 @@
   excepción secundaria en PyMuPDF.
 - **CI endurecida**: `actions/checkout` v5 → v7 y nuevo paso `pip-audit` sobre
   el entorno resuelto para auditar también dependencias transitivas.
+- **Corrección CI**: se actualiza `setuptools` a la rama corregida 83.x antes de
+  auditar el entorno resuelto, evitando la exposición PYSEC-2026-3447.
+- **Interfaz de expurgo nativo**: la exportación nativa deja de estar limitada a
+  la API y se ofrece como descarga directa para los PDF revisados.
+- **Corrección de límite de páginas**: los PDF que superan el máximo configurado
+  devuelven un error controlado sin consultar el documento después de cerrarlo.
+- **Pruebas de regresión**: se verifican el límite de páginas y la eliminación
+  efectiva de texto y metadatos en el expurgo nativo.
 - **Deuda conocida (documentada, no resuelta)**: la CSP mantiene
   `script-src 'unsafe-inline'` porque la interfaz usa 26 manejadores de eventos
   inline, varios generados dinámicamente. La migración a delegación de eventos
