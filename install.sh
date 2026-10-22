@@ -10,17 +10,17 @@ echo
 
 PYTHON_CMD=""
 if command -v python3 >/dev/null 2>&1; then
-  if python3 -c "import sys; assert sys.version_info >= (3, 10)" >/dev/null 2>&1; then
+  if python3 -c "import sys; assert sys.version_info >= (3, 11)" >/dev/null 2>&1; then
     PYTHON_CMD=python3
   fi
 fi
 if [[ -z "$PYTHON_CMD" ]] && command -v python >/dev/null 2>&1; then
-  if python -c "import sys; assert sys.version_info >= (3, 10)" >/dev/null 2>&1; then
+  if python -c "import sys; assert sys.version_info >= (3, 11)" >/dev/null 2>&1; then
     PYTHON_CMD=python
   fi
 fi
 if [[ -z "$PYTHON_CMD" ]]; then
-  echo "[ERROR] No se encontró Python 3.10+ en el sistema."
+  echo "[ERROR] No se encontró Python 3.11+ en el sistema."
   exit 1
 fi
 

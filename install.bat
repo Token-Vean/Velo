@@ -12,25 +12,25 @@ echo.
 set "PYTHON_CMD="
 where python >nul 2>&1
 if %errorlevel% equ 0 (
-    python -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
+    python -c "import sys; assert sys.version_info >= (3, 11)" >nul 2>&1
     if !errorlevel! equ 0 set "PYTHON_CMD=python"
 )
 if not defined PYTHON_CMD (
     where py >nul 2>&1
     if %errorlevel% equ 0 (
-        py -3 -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
+        py -3 -c "import sys; assert sys.version_info >= (3, 11)" >nul 2>&1
         if !errorlevel! equ 0 set "PYTHON_CMD=py -3"
     )
 )
 if not defined PYTHON_CMD (
     where python3 >nul 2>&1
     if %errorlevel% equ 0 (
-        python3 -c "import sys; assert sys.version_info >= (3, 10)" >nul 2>&1
+        python3 -c "import sys; assert sys.version_info >= (3, 11)" >nul 2>&1
         if !errorlevel! equ 0 set "PYTHON_CMD=python3"
     )
 )
 if not defined PYTHON_CMD (
-    echo   [ERROR] No se ha encontrado Python 3.10+ en este equipo.
+    echo   [ERROR] No se ha encontrado Python 3.11+ en este equipo.
     echo.
     pause
     goto :eof
