@@ -47,7 +47,10 @@ jobs:
           python -m pip install --upgrade pip "setuptools>=83.0.0" wheel
           python -m pip install -r requirements.txt
           if [ -f requirements-visual.txt ]; then python -m pip install -r requirements-visual.txt; fi
-          python -m pip install bandit pip-audit pytest ruff
+          # ruff fijado: desde 0.16 activa reglas nuevas por defecto (UP, RUF100…)
+          # y la versión sin fijar empezó a fallar sobre código sin cambios,
+          # saltándose los pasos de pip-audit posteriores. Subirlo a propósito.
+          python -m pip install bandit pip-audit pytest "ruff==0.15.22"
 
       - name: Compile check
         run: python -m compileall .
