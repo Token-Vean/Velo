@@ -1,5 +1,28 @@
 # Changelog
 
+## Sin publicar
+
+- **Seguridad — actualización de dependencias**: `Pillow` 12.3.0 → 13.0.0
+  (4 avisos críticos y 23 altos: desbordamientos de heap en los decodificadores
+  TIFF y JPEG y en FreeType, inyección de argumentos en la llamada a
+  Ghostscript, lecturas fuera de límites). `pypdf` 6.14.2 → 6.21.2 (8 avisos
+  altos y 13 moderados de consumo de memoria o CPU con PDF malformados; afectan
+  al motor fallback de Velo).
+- **Seguridad — CSP sin scripts inline**: el JavaScript de la interfaz pasa de
+  un bloque `<script>` en `index.html` a `velo_engine/static/app.js`, y los 27
+  manejadores `onclick`/`onchange`/`onerror` se sustituyen por atributos
+  `data-action` / `data-change` resueltos con una lista blanca. La CSP queda en
+  `script-src 'self'`: un fallo de escapado futuro ya no permitiría ejecutar
+  código. Se añade `escapeAttr` para valores en atributos (`escapeHtml` no
+  escapa comillas).
+- **Seguridad — validación de la cabecera Host**: las peticiones cuyo `Host` no
+  sea `127.0.0.1`, `localhost` o `::1` reciben 421, lo que bloquea el DNS
+  rebinding. Se pueden añadir nombres con `app.config["ALLOWED_HOSTS"]`.
+- **Python 3.11 o superior**: Pillow 13 ya no admite Python 3.10, que llegó a
+  fin de soporte en octubre de 2026. Los instaladores (`install.sh`,
+  `install.bat`), `MIN_PYTHON` y los README pasan a exigir 3.11. Quien tenga
+  3.10 debe actualizar Python antes de reinstalar.
+
 ## 0.5.0
 
 - **Seguridad — actualización de dependencias**: `pypdf` 6.12.0 → 6.14.2 (corrige

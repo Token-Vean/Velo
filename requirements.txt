@@ -4,4 +4,6 @@ waitress==3.0.2
 python-docx==1.2.0
 # pypdf >= 6.13.1 corrige CVE-2026-48735, CVE-2026-49460, CVE-2026-49461,
 # CVE-2026-54530, CVE-2026-54531 y CVE-2026-54651 (DoS con PDF manipulados).
-pypdf==6.14.2
+# pypdf 6.21.2 corrige ademas 8 avisos altos y 13 moderados de consumo de
+# memoria/CPU con PDF malformados publicados tras la 6.14.2.
+pypdf==6.21.2

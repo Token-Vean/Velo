@@ -37,7 +37,7 @@ Esta revisión deja el proyecto mejor alineado en varias capas:
 
 ## Requisitos
 
-- Python **3.10 o superior**.
+- Python **3.11 o superior**.
 - Entorno de escritorio local.
 
 ## Instalación
