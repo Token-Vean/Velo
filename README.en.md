@@ -161,4 +161,6 @@ See `SECURITY.md`.
 
 ## License
 
-This repository is distributed under the **AGPLv3**. Please review the `LICENSE` file before redistributing it or integrating it into other developments.
+Velo is distributed under the **GNU Affero General Public License v3 or later** (AGPL-3.0-or-later). Please review the [`LICENSE`](LICENSE) file before redistributing it or integrating it into other developments.
+
+Copyright (C) 2026 Víctor Villapalos Pardiñas.

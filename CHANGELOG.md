@@ -22,6 +22,9 @@
   fin de soporte en octubre de 2026. Los instaladores (`install.sh`,
   `install.bat`), `MIN_PYTHON` y los README pasan a exigir 3.11. Quien tenga
   3.10 debe actualizar Python antes de reinstalar.
+- **Licencia**: `LICENSE` contiene ahora el texto íntegro de la AGPL-3.0; antes
+  solo tenía el aviso abreviado y un enlace, por lo que GitHub no la reconocía.
+  El aviso de copyright pasa a los README.
 
 ## 0.5.0
 
