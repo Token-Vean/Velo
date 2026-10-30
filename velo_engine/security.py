@@ -1,6 +1,7 @@
 """Middleware y utilidades de seguridad para Velo.
 
 - Protección CSRF real con token por sesión
+- Validación de la cabecera Host (DNS rebinding)
 - Verificación same-origin para peticiones mutantes
 - Rate limiting en memoria
 - Cabeceras de seguridad HTTP
@@ -16,11 +17,17 @@ import os
 import secrets
 import time
 from collections import defaultdict
+from urllib.parse import urlparse
 from logging.handlers import RotatingFileHandler
 
 from flask import g, jsonify, request, session
 
 logger = logging.getLogger(__name__)
+
+# Nombres con los que se accede a Velo. Una web maliciosa que use DNS
+# rebinding para apuntar su dominio a 127.0.0.1 sigue enviando su propio
+# dominio en Host, así que se rechaza aquí. Ampliable con app.config["ALLOWED_HOSTS"].
+LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1"})
 
 RATE_LIMIT_WINDOW = 60
 RATE_LIMIT_MAX = 30
@@ -103,6 +110,22 @@ def _check_same_origin(app) -> bool:
     return False
 
 
+def _host_allowed(app) -> bool:
+    """True si la cabecera Host apunta a un nombre local permitido."""
+    host = (request.headers.get("Host") or "").strip()
+    if not host:
+        # Sin Host (HTTP/1.0, clientes locales): no es un vector de rebinding.
+        return True
+    if any(ch in host for ch in "/?#@ \\"):
+        return False
+    try:
+        hostname = urlparse(f"//{host}").hostname
+    except ValueError:
+        return False
+    allowed = LOCAL_HOSTNAMES | frozenset(h.lower() for h in app.config.get("ALLOWED_HOSTS", ()))
+    return bool(hostname) and hostname.lower() in allowed
+
+
 def _check_auth(app) -> bool:
     user = app.config.get("AUTH_USER", "")
     pwd = app.config.get("AUTH_PASSWORD", "")
@@ -166,6 +189,10 @@ def init_security(app):
     def _security_checks():
         ip = request.remote_addr or "unknown"
 
+        if not _host_allowed(app):
+            logger.warning("Host no permitido: %r path=%s ip=%s", request.headers.get("Host"), request.path, ip)
+            return jsonify({"error": "Host no permitido. Acceda mediante http://127.0.0.1 o http://localhost."}), 421
+
         g.csrf_token = _generate_csrf_token()
 
         # Los GET de assets de sesión (una imagen PNG por página) quedan
@@ -213,7 +240,7 @@ def init_security(app):
             "form-action 'self'; "
             "frame-ancestors 'none'; "
             "object-src 'none'; "
-            "script-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "connect-src 'self'"

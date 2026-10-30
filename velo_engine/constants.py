@@ -2,7 +2,9 @@
 
 APP_NAME = "Velo"
 APP_VERSION = "0.5.0"
-MIN_PYTHON = (3, 10)
+# 3.11: Pillow 13 (correcciones de seguridad) ya no admite Python 3.10,
+# que llego a fin de soporte en octubre de 2026.
+MIN_PYTHON = (3, 11)
 
 MAX_CONTENT_LENGTH_MB = 100
 MAX_CONTENT_LENGTH = MAX_CONTENT_LENGTH_MB * 1024 * 1024
