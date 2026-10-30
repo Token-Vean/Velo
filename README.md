@@ -89,3 +89,9 @@ El hook incluido bloquea commits accidentales de `workspace/`, `.env`, `.venv/`,
 ## Seguridad y privacidad
 
 Consulta [`SECURITY.md`](SECURITY.md).
+
+## Licencia
+
+Velo se distribuye bajo la **GNU Affero General Public License v3 o posterior** (AGPL-3.0-or-later). Ver [`LICENSE`](LICENSE).
+
+Copyright (C) 2026 Víctor Villapalos Pardiñas.
