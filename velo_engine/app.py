@@ -242,12 +242,13 @@ def analyze_file():
 
     original_name = secure_filename(file.filename) or "document"
     ext = os.path.splitext(original_name)[1].lower()
+    file_ref = uuid.uuid4().hex[:12]
 
     file.seek(0, 2)
     file_size = file.tell()
     file.seek(0)
     file_size_mb = file_size / (1024 * 1024)
-    logger.info("Fichero recibido: %s (%.1f MB)", original_name, file_size_mb)
+    logger.info("Fichero recibido: REF=%s (%.1f MB)", file_ref, file_size_mb)
 
     visual_caps = visual_capabilities()
 
@@ -265,7 +266,7 @@ def analyze_file():
             )
             _log_file_guard_warnings(validation.warnings)
         except FileValidationError as exc:
-            logger.warning("Fichero rechazado por validación previa: %s", exc.safe_message)
+            logger.warning("Fichero rechazado por validación previa: REF=%s: %s", file_ref, exc.safe_message)
             _cleanup_session(session_id)
             return jsonify({"error": exc.safe_message}), 400
 
@@ -273,30 +274,30 @@ def analyze_file():
             text, fmt, error, visual_meta = read_pdf_for_visual_review(pdf_path, session_dir, session_id)
         except Exception:
             logger.exception(
-                "Error al preparar revisión visual (fichero=%s, tamaño=%.1f MB)",
-                original_name,
+                "Error al preparar revisión visual (ref=%s, tamaño=%.1f MB)",
+                file_ref,
                 file_size_mb,
             )
             _cleanup_session(session_id)
             return jsonify({"error": "Error al preparar la revisión visual del PDF."}), 400
 
         if error:
-            logger.warning("Error en extracción PDF visual: %s (fichero=%s)", error, original_name)
+            logger.warning("Error en extracción PDF visual: %s (ref=%s)", error, file_ref)
             _cleanup_session(session_id)
             return jsonify({"error": error}), 400
         if not text:
-            logger.warning("Sin texto extraído de PDF visual (fichero=%s)", original_name)
+            logger.warning("Sin texto extraído de PDF visual (ref=%s)", file_ref)
             _cleanup_session(session_id)
             return jsonify({"error": "No se pudo extraer texto del PDF."}), 400
         if len(text) > MAX_TEXT_LENGTH:
             logger.warning(
-                "Texto extraído excede el límite: %d caracteres (máx: %d, fichero=%s)",
-                len(text), MAX_TEXT_LENGTH, original_name,
+                "Texto extraído excede el límite: %d caracteres (máx: %d, ref=%s)",
+                len(text), MAX_TEXT_LENGTH, file_ref,
             )
             _cleanup_session(session_id)
             return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
-        log_audit("analyze_file", f"FILE={original_name} HASH={hash_text(text)} MODE=visual")
+        log_audit("analyze_file", f"REF={file_ref} HASH={hash_text(text)} MODE=visual")
         result = detect(text)
         return jsonify(
             {
@@ -336,19 +337,19 @@ def analyze_file():
         _remove_temp_file(filepath)
 
     if error:
-        logger.warning("Error en extracción de fichero: %s (fichero=%s)", error, original_name)
+        logger.warning("Error en extracción de fichero: %s (ref=%s)", error, file_ref)
         return jsonify({"error": error}), 400
     if not text:
-        logger.warning("Sin texto extraído (fichero=%s)", original_name)
+        logger.warning("Sin texto extraído (ref=%s)", file_ref)
         return jsonify({"error": "No se pudo extraer texto del fichero."}), 400
     if len(text) > MAX_TEXT_LENGTH:
         logger.warning(
-            "Texto extraído excede el límite: %d caracteres (máx: %d, fichero=%s)",
-            len(text), MAX_TEXT_LENGTH, original_name,
+            "Texto extraído excede el límite: %d caracteres (máx: %d, ref=%s)",
+            len(text), MAX_TEXT_LENGTH, file_ref,
         )
         return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
-    log_audit("analyze_file", f"FILE={original_name} HASH={hash_text(text)}")
+    log_audit("analyze_file", f"REF={file_ref} HASH={hash_text(text)}")
     result = detect(text)
     return jsonify(
         {
