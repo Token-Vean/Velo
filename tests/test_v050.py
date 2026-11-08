@@ -154,3 +154,18 @@ def test_expurgo_nativo_elimina_texto_y_metadatos(tmp_path):
     assert "Victor" not in remaining_text
     assert "Villapalos" not in remaining_text
     assert metadata.get("author", "") == ""
+
+
+def test_detector_admite_formatos_espanoles_habituales():
+    from velo_engine.detector import detect_regex
+
+    casos = {
+        "12345678-Z": "dni",
+        "12.345.678-Z": "dni",
+        "ES91 2100 0418 4502 0005 1332": "iban",
+        "X-1234567-L": "nie",
+        "91 123 45 67": "phone",
+    }
+    for texto, tipo in casos.items():
+        hallazgos = detect_regex(texto)
+        assert any(h["type"] == tipo and h["text"] == texto for h in hallazgos), texto
