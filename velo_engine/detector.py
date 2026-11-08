@@ -20,7 +20,7 @@ PATTERNS = [
         "label": "DNI",
         "category": "identification",
         "description": "Documento Nacional de Identidad",
-        "regex": r"\b\d{8}[A-HJ-NP-TV-Z]\b",
+        "regex": r"(?<!\w)(?:\d{8}|\d{2}[. ]\d{3}[. ]\d{3})[ .-]?[A-HJ-NP-TV-Z](?!\w)",
         "flags": re.IGNORECASE,
     },
     {
@@ -28,7 +28,7 @@ PATTERNS = [
         "label": "NIE",
         "category": "identification",
         "description": "Número de Identidad de Extranjero",
-        "regex": r"\b[XYZ]\d{7}[A-Z]\b",
+        "regex": r"(?<!\w)[XYZ][ .-]?\d{7}[ .-]?[A-Z](?!\w)",
         "flags": re.IGNORECASE,
     },
     {
@@ -44,7 +44,7 @@ PATTERNS = [
         "label": "Teléfono",
         "category": "contact",
         "description": "Número de teléfono",
-        "regex": r"(?:\+34\s*)?\b[6-9]\d{2}[\s.-]?\d{3}[\s.-]?\d{3}\b",
+        "regex": r"(?<![\w/+])(?:\+34[ .-]?)?(?:[6789]\d{2}(?:[ .-]?\d{3}[ .-]?\d{3}|[ .-]?\d{2}[ .-]?\d{2}[ .-]?\d{2})|[89]\d[ .-]?\d{3}[ .-]?\d{2}[ .-]?\d{2})(?!\w)",
         "flags": 0,
     },
     {
@@ -60,7 +60,7 @@ PATTERNS = [
         "label": "IBAN",
         "category": "financial",
         "description": "Cuenta bancaria IBAN",
-        "regex": r"\bES\d{22}\b",
+        "regex": r"(?<!\w)ES\d{2}(?:[ .-]?\d{4}){5}(?!\w)",
         "flags": re.IGNORECASE,
     },
     {

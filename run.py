@@ -168,14 +168,21 @@ def prune_stale_sessions(workspace: str, ttl_hours: int = SESSION_TTL_HOURS) -> 
 def main() -> None:
     ensure_min_python()
 
-    workspace = os.path.join(BASE_DIR, "workspace")
+    if os.name == "nt":
+        state_root = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+        workspace = os.path.join(state_root, "Velo", "workspace")
+    elif sys.platform == "darwin":
+        workspace = os.path.join(os.path.expanduser("~/Library/Application Support"), "Velo", "workspace")
+    else:
+        state_root = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
+        workspace = os.path.join(state_root, "velo", "workspace")
     os.makedirs(workspace, exist_ok=True)
 
     setup_logging(workspace)
     logger = logging.getLogger("velo.startup")
 
     try:
-        from velo_engine.app import app
+        from velo_engine.app import app, prune_stale_export_reports
     except ImportError as exc:
         print(f"\n  [ERROR] Falta una dependencia: {exc}")
         print("  Ejecute el instalador o active el entorno virtual y use:")
@@ -200,6 +207,18 @@ def main() -> None:
     app.config["SERVER_PID"] = os.getpid()
 
     removed = prune_stale_sessions(workspace)
+    removed_reports = prune_stale_export_reports()
+
+    def _periodic_cleanup():
+        while True:
+            time.sleep(900)
+            try:
+                prune_stale_sessions(workspace)
+                prune_stale_export_reports()
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Limpieza periódica no fatal: %s", exc, exc_info=True)
+
+    threading.Thread(target=_periodic_cleanup, daemon=True).start()
 
     print("\n" + "=" * 55)
     print(f"  {APP_NAME} - Detector de datos sensibles v{APP_VERSION}")
@@ -211,6 +230,8 @@ def main() -> None:
 
     if removed:
         print(f"  [OK] Sesiones visuales antiguas eliminadas: {removed}")
+    if removed_reports:
+        print(f"  [OK] Informes antiguos eliminados: {removed_reports}")
 
     print("  [OK] Capa base: patrones regex")
     print("  [..] Comprobando spaCy de forma segura (si falla, Velo seguirá arrancando)")
