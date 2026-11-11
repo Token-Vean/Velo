@@ -6,4 +6,4 @@ python-docx==1.2.0
 # CVE-2026-54530, CVE-2026-54531 y CVE-2026-54651 (DoS con PDF manipulados).
 # pypdf 6.21.4 incorpora además las correcciones publicadas en noviembre de 2026
 # para nuevas variantes de DoS en PDF malformados.
-pypdf==6.21.4
+pypdf==7.0.0
