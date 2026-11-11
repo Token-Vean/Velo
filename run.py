@@ -195,6 +195,13 @@ def main() -> None:
         from waitress import serve as _serve
         serve = _serve
     except ImportError:
+        # El servidor de desarrollo de Flask no está pensado para uso real.
+        # Solo se admite si se pide expresamente (pruebas o desarrollo).
+        if os.environ.get("VELO_PERMITIR_SERVIDOR_FLASK", "").strip() != "1":
+            print("\n  [ERROR] Falta waitress, el servidor de Velo.")
+            print("  Vuelva a ejecutar el instalador o use:")
+            print("  python -m pip install -r requirements.txt\n")
+            sys.exit(1)
         server_mode = "flask"
 
     port = find_free_port()

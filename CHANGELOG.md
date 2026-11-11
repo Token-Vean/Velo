@@ -2,6 +2,17 @@
 
 ## Sin publicar
 
+- **Privacidad — curso 2026 (#19)**: detección de DNI con guion o puntos, NIE
+  con guiones, IBAN con espacios y fijos con espacios o guiones; los registros
+  dejan de guardar el nombre original del fichero; el espacio de trabajo pasa a
+  `%LOCALAPPDATA%\Velo`, `~/Library/Application Support/Velo` o
+  `~/.local/state/velo`, fuera de la carpeta de la aplicación, y la purga de sesiones e informes se repite cada 15 minutos.
+  `pypdf` 6.21.4.
+- **Privacidad — nombre de fichero en formatos rechazados**: el aviso de formato
+  no permitido registraba aún el nombre original; ahora solo la extensión.
+- **Servidor**: si falta `waitress`, Velo se detiene con un mensaje en lugar de
+  arrancar con el servidor de desarrollo de Flask. Para pruebas puede forzarse
+  con `VELO_PERMITIR_SERVIDOR_FLASK=1`.
 - **Seguridad — actualización de dependencias**: `Pillow` 12.3.0 → 13.0.0
   (4 avisos críticos y 23 altos: desbordamientos de heap en los decodificadores
   TIFF y JPEG y en FreeType, inyección de argumentos en la llamada a

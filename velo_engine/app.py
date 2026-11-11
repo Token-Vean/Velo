@@ -237,7 +237,8 @@ def analyze_file():
     if not file or file.filename == "":
         return jsonify({"error": "Nombre de fichero vacío."}), 400
     if not _allowed_file(file.filename):
-        logger.warning("Formato rechazado: %s", file.filename)
+        # Solo la extensión: el nombre original suele llevar nombres o DNI.
+        logger.warning("Formato rechazado: extensión %r", os.path.splitext(file.filename)[1].lower()[:16])
         return jsonify({"error": "Formato no permitido. Use TXT, DOCX o PDF."}), 400
 
     original_name = secure_filename(file.filename) or "document"

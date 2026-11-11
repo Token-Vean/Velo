@@ -60,3 +60,28 @@ def test_app_js_servido(client):
     assert response.status_code == 200
     body = response.get_data(as_text=True)
     assert "CLICK_ACTIONS" in body and "escapeAttr" in body
+
+
+def test_formato_rechazado_no_registra_el_nombre_original(client, caplog):
+    """El nombre de un fichero de archivo suele llevar nombres o DNI: no se registra."""
+    import io
+    import logging
+
+    pagina = client.get("/", headers={"Host": "localhost:7780"}).get_data(as_text=True)
+    token = re.search(r'name="csrf-token" content="([^"]+)"', pagina).group(1)
+    nombre = "Expediente Juan Pérez García 12345678Z.exe"
+    with caplog.at_level(logging.DEBUG):
+        respuesta = client.post(
+            "/api/analyze/file",
+            data={"file": (io.BytesIO(b"x"), nombre)},
+            headers={
+                "Host": "localhost:7780",
+                "Origin": "http://localhost:7780",
+                "X-CSRF-Token": token,
+            },
+            content_type="multipart/form-data",
+        )
+    assert respuesta.status_code == 400
+    registro = caplog.text
+    assert "Formato rechazado" in registro
+    assert "Pérez" not in registro and "12345678Z" not in registro
