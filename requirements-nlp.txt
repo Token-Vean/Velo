@@ -1,2 +1,5 @@
 # Velo - Dependencias NLP opcionales
-spacy>=3.7,<4.0
+# 3.8.18: exige weasel>=1.0.1 y confection>=1.3.4 y corrige una fuga de memoria
+# al añadir morfologías existentes. Los modelos es_core_news_* se descargan con
+# `python -m spacy download`, sin hash verificable: ver SECURITY.md.
+spacy>=3.8.18,<4.0

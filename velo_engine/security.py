@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import hashlib
+import hmac
 import logging
 import os
 import secrets
@@ -20,7 +21,7 @@ from collections import defaultdict
 from urllib.parse import urlparse
 from logging.handlers import RotatingFileHandler
 
-from flask import g, jsonify, request, session
+from flask import current_app, g, has_app_context, jsonify, request, session
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +79,7 @@ def _allowed_origins(app) -> list[str]:
     return [
         f"http://127.0.0.1:{port}",
         f"http://localhost:{port}",
+        f"http://[::1]:{port}",
     ]
 
 
@@ -103,8 +105,10 @@ def _check_same_origin(app) -> bool:
     if referer:
         return _origin_allowed(referer, allowed)
 
+    # "same-site" no basta: cualquier otro servicio en localhost (otro puerto)
+    # es same-site respecto a Velo.
     sec_fetch_site = (request.headers.get("Sec-Fetch-Site") or "").strip().lower()
-    if sec_fetch_site in {"same-origin", "same-site", "none"}:
+    if sec_fetch_site in {"same-origin", "none"}:
         return True
 
     return False
@@ -143,16 +147,27 @@ def _check_auth(app) -> bool:
 
 
 def setup_audit_log(log_dir: str | None = None) -> None:
+    """Configura (o redirige) el log de auditoría a ``log_dir``.
+
+    Hasta la 0.5.x se creaba al importar la aplicación, antes de que run.py
+    fijase el workspace, y acababa en ``<carpeta de instalación>/workspace``:
+    a menudo el Escritorio o Descargas, carpetas que OneDrive/iCloud
+    sincronizan por defecto. Ahora run.py lo dirige a ``<workspace>/logs``.
+    """
     if not log_dir:
         log_dir = _default_workspace()
 
     os.makedirs(log_dir, exist_ok=True)
+    target = os.path.abspath(os.path.join(log_dir, "velo_audit.log"))
 
-    if _audit.handlers:
-        return
+    for existing in list(_audit.handlers):
+        if os.path.abspath(getattr(existing, "baseFilename", "")) == target:
+            return
+        _audit.removeHandler(existing)
+        existing.close()
 
     handler = RotatingFileHandler(
-        os.path.join(log_dir, "velo_audit.log"),
+        target,
         maxBytes=5_000_000,
         backupCount=3,
         encoding="utf-8",
@@ -162,13 +177,66 @@ def setup_audit_log(log_dir: str | None = None) -> None:
     _audit.setLevel(logging.INFO)
 
 
+def _ensure_audit_handler() -> None:
+    if _audit.handlers:
+        return
+    workspace = None
+    if has_app_context():
+        workspace = current_app.config.get("WORKSPACE")
+    setup_audit_log(os.path.join(workspace, "logs") if workspace else None)
+
+
 def log_audit(action: str, detail: str = "") -> None:
+    _ensure_audit_handler()
     ip = request.remote_addr or "unknown"
     _audit.info("ACTION=%s | IP=%s | %s", action, ip, detail)
 
 
+_AUDIT_KEY: bytes | None = None
+
+
+def _audit_key() -> bytes:
+    """Clave local para seudonimizar textos en el log de auditoría.
+
+    Un SHA-256 sin clave de un texto corto (un DNI pegado, un teléfono) se
+    invierte por fuerza bruta en segundos: el espacio de DNI es de 10^8. Con
+    HMAC y una clave aleatoria por instalación, guardada junto al log, el
+    hash sigue permitiendo correlacionar análisis del mismo texto en ese
+    equipo pero deja de revelar el contenido a quien solo tenga el log.
+    """
+    global _AUDIT_KEY
+    if _AUDIT_KEY is not None:
+        return _AUDIT_KEY
+
+    key_path = None
+    if has_app_context() and current_app.config.get("WORKSPACE"):
+        key_path = os.path.join(current_app.config["WORKSPACE"], "logs", ".audit_key")
+    if key_path:
+        try:
+            with open(key_path, "rb") as handle:
+                key = handle.read()
+            if len(key) >= 32:
+                _AUDIT_KEY = key
+                return key
+        except OSError:
+            pass
+        try:
+            os.makedirs(os.path.dirname(key_path), exist_ok=True)
+            key = secrets.token_bytes(32)
+            fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(key)
+            _AUDIT_KEY = key
+            return key
+        except OSError as exc:
+            logger.warning("No se pudo guardar la clave de auditoría; se usa una por proceso: %s", type(exc).__name__)
+
+    _AUDIT_KEY = secrets.token_bytes(32)
+    return _AUDIT_KEY
+
+
 def hash_text(text: str) -> str:
-    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+    return hmac.new(_audit_key(), text.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
 
 
 def init_security(app):
@@ -183,7 +251,8 @@ def init_security(app):
     app.config.setdefault("SESSION_COOKIE_SECURE", False)
     app.config.setdefault("SESSION_REFRESH_EACH_REQUEST", False)
 
-    setup_audit_log(app.config.get("WORKSPACE", default_workspace))
+    # El log de auditoría se abre al primer uso (o desde run.py), no al
+    # importar: así no se crea en la carpeta de instalación.
 
     @app.before_request
     def _security_checks():

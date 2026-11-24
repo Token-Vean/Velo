@@ -45,6 +45,9 @@ def build() -> None:
         "--hidden-import=velo_engine.detector",
         "--hidden-import=velo_engine.reader",
         "--hidden-import=velo_engine.visual",
+        "--hidden-import=velo_engine.security",
+        "--hidden-import=velo_engine.file_guard",
+        "--hidden-import=pymupdf",
         "--clean",
         ENTRY_POINT,
     ]

@@ -182,7 +182,8 @@ def main() -> None:
     logger = logging.getLogger("velo.startup")
 
     try:
-        from velo_engine.app import app, prune_stale_export_reports
+        from velo_engine.app import app, prune_orphan_uploads, prune_stale_export_reports
+        from velo_engine.security import setup_audit_log
     except ImportError as exc:
         print(f"\n  [ERROR] Falta una dependencia: {exc}")
         print("  Ejecute el instalador o active el entorno virtual y use:")
@@ -212,9 +213,13 @@ def main() -> None:
     app.config["WORKSPACE"] = workspace
     app.config["PORT"] = port
     app.config["SERVER_PID"] = os.getpid()
+    setup_audit_log(os.path.join(workspace, "logs"))
 
     removed = prune_stale_sessions(workspace)
     removed_reports = prune_stale_export_reports()
+    # Al arrancar no hay ningún análisis en curso: cualquier subida temporal
+    # que quede es de una ejecución anterior interrumpida.
+    removed_uploads = prune_orphan_uploads(max_age_seconds=0)
 
     def _periodic_cleanup():
         while True:
@@ -222,6 +227,7 @@ def main() -> None:
             try:
                 prune_stale_sessions(workspace)
                 prune_stale_export_reports()
+                prune_orphan_uploads()
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Limpieza periódica no fatal: %s", exc, exc_info=True)
 
@@ -239,6 +245,8 @@ def main() -> None:
         print(f"  [OK] Sesiones visuales antiguas eliminadas: {removed}")
     if removed_reports:
         print(f"  [OK] Informes antiguos eliminados: {removed_reports}")
+    if removed_uploads:
+        print(f"  [OK] Subidas temporales huérfanas eliminadas: {removed_uploads}")
 
     print("  [OK] Capa base: patrones regex")
     print("  [..] Comprobando spaCy de forma segura (si falla, Velo seguirá arrancando)")
@@ -256,7 +264,7 @@ def main() -> None:
         print("  [--] Sin soporte PDF")
 
     try:
-        import fitz  # noqa: F401
+        import pymupdf  # noqa: F401
         print("  [OK] Revisión visual PDF (PyMuPDF)")
     except Exception:
         print("  [--] Sin revisión visual PDF (opcional)")

@@ -30,6 +30,7 @@ let visualAvailable = false;
 let visualMode = null;
 let visualOcrUsed = false;
 let visualReason = "";
+let extractionNotes = [];
 let nativeRedactionAvailable = false;
 let currentFormat = "txt";
 let appliedOriginal = null;
@@ -201,6 +202,7 @@ async function analyze() {
         visualMode = data.visual_mode || null;
         visualOcrUsed = Boolean(data.visual_ocr_used);
         visualReason = data.visual_reason || "";
+        extractionNotes = Array.isArray(data.extraction_notes) ? data.extraction_notes : [];
         appliedOriginal = null;
         appliedSignature = null;
         applyingOriginal = false;
@@ -233,6 +235,9 @@ function renderAnalysis() {
     let meta = `Formato de trabajo: <strong>${escapeHtml(currentFormat.toUpperCase())}</strong>. Capas activas: <strong>${escapeHtml(layersActive.join(", "))}</strong>.`;
     if (visualAvailable) {
         meta += ` Revisión visual disponible para PDF original. Base utilizada: <strong>${escapeHtml(visualMode || "text_layer")}</strong>.`;
+    }
+    for (const note of extractionNotes) {
+        meta += `<div style="margin-top:8px;color:var(--danger);"><strong>Aviso:</strong> ${escapeHtml(note)}</div>`;
     }
     document.getElementById("analysisMeta").innerHTML = meta;
 }
@@ -450,6 +455,18 @@ function confirmedFindingsSignature() {
     return JSON.stringify(confirmed);
 }
 
+function projectionWarning(unprojected, partial) {
+    const parts = [];
+    if (unprojected.length) parts.push(`${unprojected.length} hallazgo(s) confirmado(s) NO se han podido tachar en el PDF porque su texto no tiene coordenadas en la página (${unprojected.join(", ")}).`);
+    if (partial.length) parts.push(`${partial.length} hallazgo(s) solo se han tachado parcialmente (${partial.join(", ")}).`);
+    if (!parts.length) return "";
+    return parts.join(" ") + " Revise visualmente esas páginas antes de difundir el PDF o use la salida textual.";
+}
+
+function headerList(response, name) {
+    return (response.headers.get(name) || "").split(",").map(v => v.trim()).filter(Boolean);
+}
+
 function renderAppliedOriginalPages() {
     const container = document.getElementById("appliedOriginalPages");
     if (!appliedOriginal || !(appliedOriginal.pages || []).length) {
@@ -491,7 +508,9 @@ function renderOriginalApplication() {
     }
     document.getElementById("btnApplyOriginal").disabled = applyingOriginal;
     if (appliedOriginal) {
-        document.getElementById("applyOriginalStatus").innerHTML = `La edición ya se ha aplicado sobre una copia derivada del original. Páginas generadas: <strong>${appliedOriginal.page_count}</strong>. Máscaras materializadas: <strong>${appliedOriginal.total_rectangles}</strong>.`;
+        const projection = appliedOriginal.projection || {};
+        const warning = projectionWarning(projection.unprojected || [], projection.partial || []);
+        document.getElementById("applyOriginalStatus").innerHTML = `La edición ya se ha aplicado sobre una copia derivada del original. Páginas generadas: <strong>${appliedOriginal.page_count}</strong>. Máscaras materializadas: <strong>${appliedOriginal.total_rectangles}</strong>.` + (warning ? `<div style="margin-top:8px;color:var(--danger);"><strong>Atención:</strong> ${escapeHtml(warning)}</div>` : "");
         renderAppliedOriginalPages();
     } else {
         document.getElementById("applyOriginalStatus").innerHTML = "La copia derivada todavía no se ha generado. Use el botón para aplicar la edición sobre el original de forma explícita.";
@@ -607,6 +626,7 @@ function buildEnvelope() {
 }
 
 function assessRisk(confirmed) {
+    const pending = findings.filter(f => f.status === "pending").length;
     let direct = 0;
     let quasi = 0;
     confirmed.forEach(f => {
@@ -616,7 +636,11 @@ function assessRisk(confirmed) {
     let level = "ALTO";
     let text = "No se ha confirmado ningún dato sensible. Revise el documento antes de exportar.";
     let color = "#DC2626";
-    if (confirmed.length >= 3) {
+    if (pending > 0) {
+        level = "ALTO";
+        text = `Quedan ${pending} hallazgo(s) sin revisar. Confírmelos o descártelos antes de exportar: los pendientes no se tachan.`;
+        color = "#DC2626";
+    } else if (confirmed.length >= 3) {
         level = "BAJO";
         text = `Se han tratado ${confirmed.length} hallazgos. Verifique que los datos residuales no permitan reidentificación por combinación.`;
         color = "#15803D";
@@ -628,7 +652,8 @@ function assessRisk(confirmed) {
     document.getElementById("riskAssessment").innerHTML = `<div style="font-weight:800;margin-bottom:10px;">ISO/IEC 27559 — Riesgo de reidentificación</div>
 <div style="display:inline-block;padding:4px 12px;border-radius:999px;background:${color}18;color:${color};font-size:11px;font-weight:800;margin-bottom:10px;">${level}</div>
 <div style="color:var(--text-2);line-height:1.55;">${text}</div>
-<div style="font-size:12px;color:var(--text-3);margin-top:8px;">Identificadores directos tratados: ${direct} · Cuasi-identificadores tratados: ${quasi}</div>`;
+<div style="font-size:12px;color:var(--text-3);margin-top:8px;">Identificadores directos tratados: ${direct} · Cuasi-identificadores tratados: ${quasi} · Pendientes: ${pending}</div>
+<div style="font-size:12px;color:var(--text-3);margin-top:4px;">Indicador orientativo basado en el recuento de hallazgos; no sustituye una evaluación de riesgo de reidentificación.</div>`;
 }
 
 function renderExport() {
@@ -784,6 +809,7 @@ async function downloadNativeRedactedPdf(button) {
             throw new Error(message);
         }
 
+        const warning = projectionWarning(headerList(response, "X-Velo-Sin-Proyectar"), headerList(response, "X-Velo-Proyeccion-Parcial"));
         const blob = await response.blob();
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -793,6 +819,7 @@ async function downloadNativeRedactedPdf(button) {
         link.click();
         link.remove();
         URL.revokeObjectURL(url);
+        if (warning) alert("Atención: " + warning);
         button.textContent = "Descargado";
         setTimeout(() => button.textContent = original, 1400);
     } catch (err) {

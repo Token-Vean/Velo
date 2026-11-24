@@ -2,6 +2,59 @@
 
 ## Sin publicar
 
+### Auditoría de seguridad y privacidad (noviembre de 2026)
+
+- **Dependencias**: `pypdf` 6.21.4 → 7.1.0 (correcciones de seguridad de 7.0.0
+  y 7.0.1: límites de imagen, object streams, XFA, búferes de imagen).
+  `PyMuPDF` 1.28.0 → 2.1 (MuPDF 1.28.6: CVE-2026-7233, desbordamiento de pila
+  #5112, cuelgues de `get_pixmap`/`get_text` #5082 y #5125, y #5152:
+  `apply_redactions()` dejaba texto mostrado con el operador `'`, regresión de
+  1.28 que afectaba al expurgo nativo). `spacy` ≥ 3.8.18. Mínimos explícitos
+  para transitivas con avisos recientes: `Werkzeug` ≥ 3.1.6, `Jinja2` ≥ 3.1.6,
+  `lxml` ≥ 6.1.0. El código usa `import pymupdf` (el módulo `fitz` queda
+  obsoleto en PyMuPDF 2.x).
+- **Expurgo nativo — saneado completo**: además de metadatos, la copia derivada
+  elimina anotaciones y comentarios, adjuntos e incrustados, índice/marcadores,
+  JavaScript, enlaces, miniaturas y valores de formulario (`Document.scrub`).
+  Antes una nota adhesiva o un adjunto con datos personales sobrevivían al
+  expurgo. La capa OCR invisible se conserva.
+- **Hallazgos sin proyectar**: si un hallazgo confirmado no tiene coordenadas en
+  el PDF (palabra sin mapear, OCR deficiente) no puede tacharse. Antes ocurría
+  en silencio; ahora la aplicación sobre el original y las descargas PDF avisan
+  de los hallazgos no tachados o tachados solo en parte.
+- **DOCX completo**: se analizan tablas, encabezados, pies, notas al pie y al
+  final, comentarios y cuadros de texto; antes solo los párrafos del cuerpo.
+  Se avisa si el documento tiene control de cambios, comentarios o imágenes.
+- **ReDoS en el patrón de correo**: con cuantificadores sin límite, un texto
+  tipo `a.a.a.…` tardaba horas (cuadrático). Ahora es lineal.
+- **Solapes en O(log n)**: la comprobación de solapes entre hallazgos era
+  cuadrática; un listado con decenas de miles de correos bloqueaba un hilo
+  durante horas. Por encima de 20 000 hallazgos se pide dividir el documento.
+- **Validación de hallazgos**: los endpoints de exportación y redacción
+  rechazan con 400 estructuras mal formadas en lugar de fallar con 500.
+- **Log de auditoría**: se escribía en la carpeta de instalación (a menudo
+  sincronizada con la nube) porque se abría antes de fijar el workspace; ahora
+  va a `<workspace>/logs`. El hash de los textos pasa a HMAC con clave local:
+  el SHA-256 truncado de un DNI se invertía por fuerza bruta en segundos.
+- **Logs sin contenido**: el registro DEBUG de palabras no mapeadas incluía el
+  texto de la palabra; ahora solo su longitud.
+- **Subidas huérfanas**: los TXT/DOCX/PDF temporales que sobrevivían a una
+  caída del proceso se purgan al arrancar y cada 15 minutos.
+- **Páginas gigantes**: la escala de render se reduce por página para no
+  superar 20 Mpx (un PDF con páginas de 14 400 pt pedía ~2,5 GB por página).
+- **OCR**: la imagen se cierra tras Tesseract; en Windows el fichero abierto
+  impedía borrar la sesión.
+- **Same-origin**: `Sec-Fetch-Site: same-site` ya no basta (otro puerto de
+  localhost es same-site); se admite el origen `http://[::1]:puerto`.
+- **Nombres no ASCII**: la extensión se toma del nombre original; `数据.pdf`
+  se rechazaba porque `secure_filename` lo dejaba en `pdf`.
+- **Riesgo orientativo**: con hallazgos pendientes de revisión el indicador
+  marca ALTO; antes podía marcar BAJO con decenas de pendientes.
+- **spaCy**: el modelo se carga una vez por proceso, no en cada análisis ni en
+  cada consulta a `/api/status`.
+
+### Anteriores
+
 - **Privacidad — curso 2026 (#19)**: detección de DNI con guion o puntos, NIE
   con guiones, IBAN con espacios y fijos con espacios o guiones; los registros
   dejan de guardar el nombre original del fichero; el espacio de trabajo pasa a

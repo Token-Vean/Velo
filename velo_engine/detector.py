@@ -6,8 +6,10 @@ Capa opcional: spaCy para NER (nombres, lugares, instituciones).
 
 from __future__ import annotations
 
+import bisect
 import logging
 import re
+import threading
 from datetime import datetime
 
 from velo_engine.constants import APP_VERSION
@@ -52,7 +54,10 @@ PATTERNS = [
         "label": "Email",
         "category": "contact",
         "description": "Dirección de correo electrónico",
-        "regex": r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+        # Cuantificadores acotados (RFC 5321: parte local <= 64, dominio <= 253):
+        # con "+" sin límite, un texto largo tipo "a.a.a.a..." sin "@" provocaba
+        # backtracking cuadrático (40 000 caracteres -> 1,5 s; 2 M -> horas).
+        "regex": r"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,253}\.[A-Za-z]{2,63}\b",
         "flags": 0,
     },
     {
@@ -170,7 +175,34 @@ def _validate_match(pattern_id, raw_text):
     return True
 
 
+class _IntervalIndex:
+    """Intervalos [start, end) disjuntos y ordenados, con consulta O(log n).
+
+    Sustituye a la comprobación lineal de solapes contra todos los hallazgos
+    previos, que era cuadrática: un texto con decenas de miles de correos o
+    teléfonos (p. ej. un listado pegado) tardaba minutos u horas.
+    """
+
+    def __init__(self, findings=()):
+        self._starts: list[int] = []
+        self._ends: list[int] = []
+        for finding in findings:
+            self.add(finding["position"]["start"], finding["position"]["end"])
+
+    def overlaps(self, start: int, end: int) -> bool:
+        idx = bisect.bisect_right(self._starts, start)
+        if idx > 0 and self._ends[idx - 1] > start:
+            return True
+        return idx < len(self._starts) and self._starts[idx] < end
+
+    def add(self, start: int, end: int) -> None:
+        idx = bisect.bisect_right(self._starts, start)
+        self._starts.insert(idx, start)
+        self._ends.insert(idx, end)
+
+
 def _overlaps(new_start, new_end, findings):
+    """Compatibilidad: comprobación puntual (lineal) contra una lista."""
     for finding in findings:
         start = finding["position"]["start"]
         end = finding["position"]["end"]
@@ -181,6 +213,7 @@ def _overlaps(new_start, new_end, findings):
 
 def detect_regex(text):
     findings = []
+    occupied = _IntervalIndex()
     counter = 0
 
     for pattern in PATTERNS:
@@ -191,8 +224,9 @@ def detect_regex(text):
 
             if not _validate_match(pattern["id"], raw_text):
                 continue
-            if _overlaps(start, end, findings):
+            if occupied.overlaps(start, end):
                 continue
+            occupied.add(start, end)
 
             counter += 1
             findings.append({
@@ -212,7 +246,25 @@ def detect_regex(text):
     return findings
 
 
+_SPACY_CACHE: tuple | None = None
+_SPACY_LOCK = threading.Lock()
+
+
 def _load_spacy_model():
+    """Carga el modelo spaCy una sola vez por proceso.
+
+    Antes se llamaba a ``spacy.load`` en cada análisis y en cada consulta a
+    ``/api/status``: varios segundos y cientos de MB por petición, suficiente
+    para bloquear los hilos de waitress durante una demostración.
+    """
+    global _SPACY_CACHE
+    with _SPACY_LOCK:
+        if _SPACY_CACHE is None:
+            _SPACY_CACHE = _load_spacy_model_uncached()
+        return _SPACY_CACHE
+
+
+def _load_spacy_model_uncached():
     global _SPACY_ERROR
     try:
         import spacy  # type: ignore
@@ -250,6 +302,7 @@ def detect_ner(text, existing_findings=None):
 
         doc = nlp(text)
         findings = []
+        occupied = _IntervalIndex(existing_findings)
         counter = len(existing_findings)
         label_map = {
             "PER": ("person_name", "Nombre persona", "personal"),
@@ -263,8 +316,9 @@ def detect_ner(text, existing_findings=None):
                 continue
             type_id, label, category = label_map[ent.label_]
             start, end = ent.start_char, ent.end_char
-            if _overlaps(start, end, existing_findings + findings):
+            if occupied.overlaps(start, end):
                 continue
+            occupied.add(start, end)
             counter += 1
             findings.append({
                 "id": f"f{counter:03d}",
@@ -314,8 +368,9 @@ def spacy_status():
 
 def build_envelope(document_id, findings, layers_active, layers_available):
     now = datetime.now().isoformat()
-    confirmed = [item for item in findings if item["status"] == "confirmed"]
-    discarded = [item for item in findings if item["status"] == "discarded"]
+    findings = [item for item in findings if isinstance(item, dict)]
+    confirmed = [item for item in findings if item.get("status") == "confirmed"]
+    discarded = [item for item in findings if item.get("status") == "discarded"]
 
     return {
         "document_id": document_id,
@@ -335,29 +390,29 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         },
         "findings": [
             {
-                "id": item["id"],
-                "text": item["text"],
-                "category": item["category"],
-                "type": item["type"],
-                "label": item["label"],
-                "position": item["position"],
-                "confidence": item["confidence"],
-                "method": item["method"],
+                "id": item.get("id"),
+                "text": item.get("text"),
+                "category": item.get("category"),
+                "type": item.get("type"),
+                "label": item.get("label"),
+                "position": item.get("position"),
+                "confidence": item.get("confidence"),
+                "method": item.get("method"),
                 "human_decision": "confirmed",
                 "technique": item.get("technique", "suppression"),
             }
             for item in confirmed
         ],
         "discarded": [
-            {"id": item["id"], "text": item["text"], "type": item["type"], "reason": "false_positive"}
+            {"id": item.get("id"), "text": item.get("text"), "type": item.get("type"), "reason": "false_positive"}
             for item in discarded
         ],
         "summary": {
             "total_detected": len(findings),
             "confirmed": len(confirmed),
             "discarded": len(discarded),
-            "categories_found": list({item["category"] for item in confirmed}),
-            "types_found": list({item["type"] for item in confirmed}),
+            "categories_found": sorted({str(item.get("category")) for item in confirmed}),
+            "types_found": sorted({str(item.get("type")) for item in confirmed}),
         },
         "audit": {
             "reviewed_by": "archivero",

@@ -1,8 +1,11 @@
 # Velo - Dependencias visuales opcionales
-# MuPDF 1.28.0 incorpora correcciones de endurecimiento de seguridad.
-PyMuPDF==1.28.0
-# Pillow 12.3.0 corrige bypass de la proteccion anti-bomba de descompresion
-# (CVE-2026-54060, CVE-2026-55379, CVE-2026-55380).
+# PyMuPDF 2.1 (MuPDF 1.28.6). Frente a 1.28.0 corrige, entre otros:
+#   - CVE-2026-7233 (lectura fuera de límites en subset-cff.c, MuPDF <= 1.28.0)
+#   - desbordamiento de pila en JM_set_annot_callout_line (#5112)
+#   - get_pixmap()/get_text() colgados al 100 % de CPU con PDF concretos (#5082, #5125)
+#   - apply_redactions() no eliminaba texto mostrado con el operador ' tras TL+Td
+#     (#5152, regresión de 1.28): afectaba directamente al expurgo nativo de Velo.
+PyMuPDF==2.1
 # Pillow 13.0.0 corrige 4 avisos criticos y 23 altos (desbordamientos de heap
 # en TIFF/JPEG/FreeType, inyeccion de argumentos en Ghostscript). Exige
 # Python 3.11 o superior.

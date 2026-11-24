@@ -13,18 +13,19 @@ import uuid
 
 from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
-from werkzeug.utils import secure_filename
 
 from velo_engine.constants import (
     APP_VERSION,
     EXPORT_REPORT_TTL_HOURS,
     MAX_CONTENT_LENGTH,
+    MAX_FINDINGS,
     MAX_TEXT_LENGTH,
+    ORPHAN_UPLOAD_TTL_SECONDS,
     SESSION_TTL_HOURS,
 )
 from velo_engine.detector import build_envelope, detect, spacy_status
 from velo_engine.file_guard import FileValidationError, validate_uploaded_file
-from velo_engine.reader import read_file, supported_extensions
+from velo_engine.reader import docx_review_notes, read_file, supported_extensions
 from velo_engine.security import init_security, log_audit, hash_text
 from velo_engine.visual import (
     apply_redactions_to_original,
@@ -55,7 +56,58 @@ def _allowed_file(filename: str) -> bool:
 
 
 def _sanitize_id(value: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_\-]", "", value or "")[:64]
+    if not isinstance(value, str):
+        return ""
+    return re.sub(r"[^A-Za-z0-9_\-]", "", value)[:64]
+
+
+_FINDING_STATUSES = {"pending", "confirmed", "discarded"}
+
+
+def _clean_findings(raw) -> list[dict] | None:
+    """Normaliza los hallazgos que envía el navegador.
+
+    Devuelve None si la estructura no es válida. Evita errores 500 (y
+    excepciones en los módulos de redacción) con datos mal formados y limita
+    el volumen procesable.
+    """
+    if not isinstance(raw, list) or len(raw) > MAX_FINDINGS:
+        return None
+    cleaned = []
+    for item in raw:
+        if not isinstance(item, dict):
+            return None
+        position = item.get("position")
+        if not isinstance(position, dict):
+            return None
+        start, end = position.get("start"), position.get("end")
+        if (
+            not isinstance(start, int) or not isinstance(end, int)
+            or isinstance(start, bool) or isinstance(end, bool)
+            or start < 0 or end <= start or end > MAX_TEXT_LENGTH
+        ):
+            return None
+        status = item.get("status")
+        if status not in _FINDING_STATUSES:
+            return None
+        cleaned.append({
+            **{k: v for k, v in item.items() if k != "position"},
+            "id": str(item.get("id", ""))[:32],
+            "status": status,
+            "position": {"start": start, "end": end},
+        })
+    return cleaned
+
+
+def _detect_or_error(text: str):
+    """Ejecuta el detector y rechaza resultados inmanejables en la interfaz."""
+    result = detect(text)
+    if len(result["findings"]) > MAX_FINDINGS:
+        return None, (
+            f"El documento genera más de {MAX_FINDINGS:,} hallazgos y no puede revisarse "
+            "con garantías en la interfaz. Divídalo en partes más pequeñas."
+        )
+    return result, None
 
 
 def _is_within(root: str, path: str) -> bool:
@@ -149,6 +201,39 @@ def prune_stale_sessions(ttl_hours: int = SESSION_TTL_HOURS) -> int:
     return removed
 
 
+_ORPHAN_UPLOAD_RE = re.compile(r"^[0-9a-f]{12}\.(?:txt|docx|pdf)$")
+
+
+def prune_orphan_uploads(max_age_seconds: int = ORPHAN_UPLOAD_TTL_SECONDS) -> int:
+    """Elimina subidas temporales huérfanas del workspace.
+
+    Los TXT/DOCX/PDF sin revisión visual se guardan un instante en el
+    workspace con nombre aleatorio y se borran tras leerlos. Si el proceso
+    muere a mitad (cierre de la ventana, corte de luz), el documento original
+    quedaba ahí indefinidamente.
+    """
+    workspace = _workspace_dir()
+    cutoff = time.time() - max_age_seconds
+    removed = 0
+    try:
+        names = os.listdir(workspace)
+    except OSError:
+        return 0
+    for name in names:
+        if not _ORPHAN_UPLOAD_RE.match(name):
+            continue
+        path = os.path.join(workspace, name)
+        try:
+            if os.path.isfile(path) and os.path.getmtime(path) < cutoff:
+                os.remove(path)
+                removed += 1
+        except OSError:
+            continue
+    if removed:
+        logger.info("Subidas temporales huérfanas eliminadas: %d", removed)
+    return removed
+
+
 def prune_stale_export_reports(ttl_hours: int = EXPORT_REPORT_TTL_HOURS) -> int:
     """Purga informes ``*_pii_report.json`` antiguos del workspace.
 
@@ -215,7 +300,9 @@ def analyze_text():
         return jsonify({"error": f"Texto demasiado largo ({len(text)} caracteres). Máximo: {MAX_TEXT_LENGTH}."}), 400
 
     log_audit("analyze_text", f"HASH={hash_text(text)} LEN={len(text)}")
-    result = detect(text)
+    result, detect_error = _detect_or_error(text)
+    if detect_error:
+        return jsonify({"error": detect_error}), 400
     return jsonify(
         {
             "success": True,
@@ -241,8 +328,13 @@ def analyze_file():
         logger.warning("Formato rechazado: extensión %r", os.path.splitext(file.filename)[1].lower()[:16])
         return jsonify({"error": "Formato no permitido. Use TXT, DOCX o PDF."}), 400
 
-    original_name = secure_filename(file.filename) or "document"
-    ext = os.path.splitext(original_name)[1].lower()
+    # La extensión sale del nombre original (ya validado por _allowed_file).
+    # Antes se tomaba de secure_filename(), que elimina caracteres no ASCII:
+    # "数据.pdf" quedaba en "pdf", sin extensión, y el fichero se rechazaba.
+    # El nombre original no se usa más allá de la extensión: suele contener
+    # nombres o DNI y no debe llegar a disco ni a los logs.
+    ext = os.path.splitext(file.filename)[1].lower()
+    original_name = f"document{ext}"
     file_ref = uuid.uuid4().hex[:12]
 
     file.seek(0, 2)
@@ -299,7 +391,10 @@ def analyze_file():
             return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
         log_audit("analyze_file", f"REF={file_ref} HASH={hash_text(text)} MODE=visual")
-        result = detect(text)
+        result, detect_error = _detect_or_error(text)
+        if detect_error:
+            _cleanup_session(session_id)
+            return jsonify({"error": detect_error}), 400
         return jsonify(
             {
                 "success": True,
@@ -332,8 +427,11 @@ def analyze_file():
         _remove_temp_file(filepath)
         return jsonify({"error": exc.safe_message}), 400
 
+    notes: list[str] = []
     try:
         text, fmt, error = read_file(filepath)
+        if not error and ext == ".docx":
+            notes = docx_review_notes(filepath)
     finally:
         _remove_temp_file(filepath)
 
@@ -351,7 +449,9 @@ def analyze_file():
         return jsonify({"error": f"Texto extraído demasiado largo ({len(text):,} caracteres). Máximo: {MAX_TEXT_LENGTH:,}."}), 400
 
     log_audit("analyze_file", f"REF={file_ref} HASH={hash_text(text)}")
-    result = detect(text)
+    result, detect_error = _detect_or_error(text)
+    if detect_error:
+        return jsonify({"error": detect_error}), 400
     return jsonify(
         {
             "success": True,
@@ -360,6 +460,7 @@ def analyze_file():
             "text": text,
             "visual_available": False,
             "visual_reason": "La revisión visual solo está disponible para PDF.",
+            "extraction_notes": notes,
             **result,
         }
     )
@@ -373,12 +474,16 @@ def export_envelope():
 
     raw_id = data.get("document_id", f"DOC-{uuid.uuid4().hex[:8].upper()}")
     document_id = _sanitize_id(raw_id) or f"DOC-{uuid.uuid4().hex[:8].upper()}"
-    findings = data.get("findings", [])
+    findings = _clean_findings(data.get("findings", []))
     layers_active = data.get("layers_active", ["regex"])
     layers_available = data.get("layers_available", ["regex"])
 
-    if not isinstance(findings, list):
+    if findings is None:
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
+    if not isinstance(layers_active, list) or not isinstance(layers_available, list):
+        return jsonify({"error": "Formato de capas no válido."}), 400
+    layers_active = [str(item)[:32] for item in layers_active[:8]]
+    layers_available = [str(item)[:32] for item in layers_available[:8]]
 
     log_audit("export", f"DOC={document_id} FINDINGS={len(findings)}")
     prune_stale_export_reports()
@@ -403,10 +508,10 @@ def apply_original_redactions():
         return jsonify({"error": "Petición inválida."}), 400
 
     session_id = _sanitize_id(data.get("session_id"))
-    findings = data.get("findings", [])
+    findings = _clean_findings(data.get("findings", []))
     if not session_id:
         return jsonify({"error": "No hay sesión visual activa para aplicar la edición sobre el original."}), 400
-    if not isinstance(findings, list):
+    if findings is None:
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
     session_dir = _session_dir(session_id, create=False)
@@ -455,11 +560,11 @@ def export_redacted_pdf():
         return jsonify({"error": "Petición inválida."}), 400
 
     session_id = _sanitize_id(data.get("session_id"))
-    findings = data.get("findings", [])
+    findings = _clean_findings(data.get("findings", []))
     document_id = _sanitize_id(data.get("document_id", f"DOC-{uuid.uuid4().hex[:8].upper()}"))
     if not session_id:
         return jsonify({"error": "No hay sesión visual activa para exportar el PDF original."}), 400
-    if not isinstance(findings, list):
+    if findings is None:
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
     session_dir = _session_dir(session_id, create=False)
@@ -473,7 +578,7 @@ def export_redacted_pdf():
     #   - "native": expurgo real con apply_redactions de PyMuPDF. El texto
     #     subyacente se ELIMINA del fichero (no solo se tapa) y el PDF
     #     resultante conserva su naturaleza vectorial y su capa de texto.
-    redaction_mode = (data.get("redaction_mode") or "image").strip().lower()
+    redaction_mode = str(data.get("redaction_mode") or "image").strip().lower()
     if redaction_mode not in ("image", "native"):
         return jsonify({"error": "Modo de redacción no válido. Use 'image' o 'native'."}), 400
 
@@ -481,28 +586,40 @@ def export_redacted_pdf():
     output_name = f"{document_id or 'DOC'}_{suffix}.pdf"
     output_path = os.path.join(session_dir, output_name)
 
+    projection = {"unprojected": [], "partial": []}
     try:
         if redaction_mode == "native":
             native_stats = export_native_redacted_pdf(session_dir, findings, output_path)
+            projection = native_stats.get("projection", projection)
             log_audit(
                 "export_native_pdf",
                 f"DOC={document_id} RECT={native_stats['total_rectangles']} "
-                f"PAGES={native_stats['pages_touched']}",
+                f"PAGES={native_stats['pages_touched']} "
+                f"SIN_PROYECTAR={len(projection['unprojected'])} PARCIALES={len(projection['partial'])}",
             )
         else:
             export_visual_redacted_pdf(session_dir, findings, output_path)
+            try:
+                projection = load_applied_metadata(session_dir).get("projection", projection)
+            except Exception:  # noqa: BLE001
+                logger.debug("Sin metadatos de proyección tras la exportación imagen", exc_info=True)
     except Exception:
         logger.exception("No se pudo exportar el PDF (modo=%s)", redaction_mode)
         return jsonify({"error": "No se pudo exportar el PDF redactado."}), 400
 
     with open(output_path, "rb") as handle:
         pdf_bytes = handle.read()
-    return send_file(
+    response = send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",
         as_attachment=True,
         download_name=output_name,
     )
+    # Hallazgos confirmados que no pudieron tacharse (sin coordenadas en el
+    # PDF): la interfaz avisa al archivero tras la descarga.
+    response.headers["X-Velo-Sin-Proyectar"] = ",".join(_sanitize_id(i) for i in projection["unprojected"])[:2000]
+    response.headers["X-Velo-Proyeccion-Parcial"] = ",".join(_sanitize_id(i) for i in projection["partial"])[:2000]
+    return response
 
 
 @app.route("/api/session/<session_id>/asset/<filename>")
