@@ -1,7 +1,7 @@
 """Constantes de aplicación para Velo."""
 
 APP_NAME = "Velo"
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 # 3.11: Pillow 13 (correcciones de seguridad) ya no admite Python 3.10,
 # que llego a fin de soporte en octubre de 2026.
 MIN_PYTHON = (3, 11)

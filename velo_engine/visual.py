@@ -17,11 +17,13 @@ Estrategia de extraccion:
 
 from __future__ import annotations
 
+from bisect import bisect_right
 import json
 import logging
 import os
 import re
 import unicodedata
+import uuid
 from collections import defaultdict
 from itertools import groupby
 from typing import Dict, Iterable, List, Tuple
@@ -50,7 +52,6 @@ TEXT_RENDER_SCALE = 2.0
 MAX_RENDER_PIXELS = 20_000_000
 SESSION_METADATA = "visual.json"
 APPLIED_METADATA = "applied_original.json"
-APPLIED_PDF_NAME = "original_redacted.pdf"
 
 
 def visual_capabilities() -> dict:
@@ -197,11 +198,16 @@ def _merge_char_level_words(words: List[dict], scale: float) -> List[dict]:
 # ---------------------------------------------------------------------------
 
 def _words_from_text_layer(page, scale: float) -> List[dict]:
+    import pymupdf
+
     words = []
+    rotation = page.rotation_matrix
+
     for item in page.get_text("words", sort=True):
         if len(item) < 8:
             continue
         x0, y0, x1, y1, text, block_no, line_no, word_no = item[:8]
+        x0, y0, x1, y1 = pymupdf.Rect(x0, y0, x1, y1) * rotation
         text = _normalize_word(text)
         if not text:
             continue
@@ -515,6 +521,15 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
         else:
             source = "none"
 
+        coverage_note = ""
+        if not mapped_words:
+            coverage_note = f"Página {page_index + 1}: sin texto localizado; requiere revisión visual."
+        elif page_words_raw and page.get_image_info():
+            coverage_note = (
+                f"Página {page_index + 1}: hay texto e imágenes. Solo se ha analizado "
+                "la capa de texto; revise firmas, sellos y texto dentro de las imágenes."
+            )
+
         pages.append(
             {
                 "page": page_index + 1,
@@ -526,6 +541,7 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
                 "text_start": page_text_start,
                 "text_end": global_offset,
                 "source": source,
+                "coverage_note": coverage_note,
                 "words": mapped_words,
             }
         )
@@ -623,36 +639,61 @@ def projection_report(pages_meta: List[dict], confirmed_findings: List[dict]) ->
     tacha en la copia derivada. Antes ocurría en silencio; ahora se informa
     para que el archivero revise esas páginas o aplique otra técnica.
     """
-    covered: Dict[str, int] = defaultdict(int)
-    for page_meta in pages_meta:
-        for word in page_meta.get("words", []):
-            for finding in confirmed_findings:
-                start = finding.get("position", {}).get("start")
-                end = finding.get("position", {}).get("end")
-                if start is None or end is None or end <= word["start"] or start >= word["end"]:
-                    continue
-                covered[finding.get("id")] += min(end, word["end"]) - max(start, word["start"])
-
-    unprojected: List[str] = []
-    partial: List[str] = []
+    # Un intervalo repetido no compensa un carácter sin cubrir en otro lugar.
+    intervals = sorted((w["start"], w["end"]) for page in pages_meta for w in page["words"])
+    merged = []
+    for left, right in intervals:
+        if merged and left <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], right)
+        else:
+            merged.append([left, right])
+    ends = [b for _, b in merged]
+    result = {"unprojected": [], "partial": []}
     for finding in confirmed_findings:
-        fid = finding.get("id")
-        start = finding.get("position", {}).get("start")
-        end = finding.get("position", {}).get("end")
-        if start is None or end is None:
-            unprojected.append(fid)
+        start, end = finding["position"]["start"], finding["position"]["end"]
+        index = bisect_right(ends, start)
+        if index == len(merged) or merged[index][0] >= end:
+            result["unprojected"].append(finding["id"])
             continue
         text = finding.get("text")
-        expected = len(re.sub(r"\s", "", text)) if isinstance(text, str) and text else (end - start)
-        got = covered.get(fid, 0)
-        if got <= 0:
-            unprojected.append(fid)
-        elif expected and got < 0.9 * expected:
-            partial.append(fid)
-    return {"unprojected": unprojected, "partial": partial}
+
+        def has_content(left, right):
+            if left >= right:
+                return False
+            if not isinstance(text, str) or len(text) != end - start:
+                return True
+            return bool(text[left - start:right - start].strip())
+
+        cursor = start
+        while index < len(merged) and merged[index][0] < end:
+            left, right = merged[index]
+            if has_content(cursor, left):
+                break
+            cursor = max(cursor, right)
+            index += 1
+        if has_content(cursor, end):
+            result["partial"].append(finding["id"])
+    return result
 
 
-def _signature_for_findings(findings: List[dict]) -> str:
+def _review_issues(pages, findings, projection):
+    issues = [p["coverage_note"] for p in pages if p.get("coverage_note")]
+    if any("coverage_note" not in p for p in pages):
+        issues.append("Sesión anterior a la comprobación de cobertura. Vuelva a analizar el PDF.")
+    pending = sum(f["status"] == "pending" for f in findings)
+    if pending:
+        issues.append(f"{pending} hallazgos pendientes de revisión.")
+    positions = {f["id"]: f["position"] for f in findings}
+    for key, reason in (("unprojected", "sin tachar"), ("partial", "tachado parcial")):
+        for fid in projection[key]:
+            pos = positions[fid]
+            numbers = [str(p["page"]) for p in pages if pos["start"] < p["text_end"] and pos["end"] > p["text_start"]]
+            where = "pág. " + ", ".join(numbers) if numbers else "página sin localizar"
+            issues.append(f"{fid} ({where}): {reason}.")
+    return issues
+
+
+def signature_for_findings(findings: List[dict]) -> str:
     payload = []
     for item in sorted(_confirmed_findings(findings), key=lambda x: (x.get("id", ""), x.get("position", {}).get("start", -1))):
         payload.append(
@@ -697,6 +738,7 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
         raise ValueError("No hay hallazgos confirmados para aplicar sobre el original.")
 
     assets_dir = _ensure_dirs(session_dir)
+    revision = uuid.uuid4().hex
     page_results = []
     redacted_paths: List[str] = []
     total_rectangles = 0
@@ -711,7 +753,7 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
             for rect in rectangles:
                 draw.rectangle(rect, fill="black")
 
-            redacted_name = f"redacted_{page_meta['image_name']}"
+            redacted_name = f"{revision}_{page_meta['image_name']}"
             redacted_path = os.path.join(assets_dir, redacted_name)
             image.save(redacted_path)
             image.close()
@@ -732,28 +774,34 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
     if not redacted_paths:
         raise ValueError("No hay paginas renderizadas para aplicar las redacciones.")
 
-    output_path = os.path.join(session_dir, APPLIED_PDF_NAME)
+    pdf_name = f"{revision}_testado.pdf"
+    output_path = os.path.join(session_dir, pdf_name)
     _build_pdf_from_images(redacted_paths, output_path)
 
+    projection = projection_report(metadata["pages"], confirmed)
     applied = {
         "session_id": session_id,
         "pdf_url": f"/api/session/{session_id}/applied-original-pdf",
-        "pdf_name": APPLIED_PDF_NAME,
+        "pdf_name": pdf_name,
+        "revision": revision,
         "pages": page_results,
         "page_count": len(page_results),
         "total_rectangles": total_rectangles,
-        "findings_signature": _signature_for_findings(findings),
+        "findings_signature": signature_for_findings(findings),
         "based_on_original_pdf_images": True,
-        "projection": projection_report(metadata.get("pages", []), confirmed),
+        "projection": projection,
+        "issues": _review_issues(metadata["pages"], findings, projection),
     }
-    with open(os.path.join(session_dir, APPLIED_METADATA), "w", encoding="utf-8") as handle:
+    temp_meta = os.path.join(session_dir, revision + ".json.tmp")
+    with open(temp_meta, "w", encoding="utf-8") as handle:
         json.dump(applied, handle, ensure_ascii=False, indent=2)
+    os.replace(temp_meta, os.path.join(session_dir, APPLIED_METADATA))
     return applied
 
 
 def export_visual_redacted_pdf(session_dir: str, findings: List[dict], output_path: str) -> str:
-    apply_redactions_to_original(session_dir, "export", findings)
-    generated = os.path.join(session_dir, APPLIED_PDF_NAME)
+    applied = apply_redactions_to_original(session_dir, os.path.basename(session_dir), findings)
+    generated = os.path.join(session_dir, applied["pdf_name"])
     if os.path.abspath(generated) != os.path.abspath(output_path):
         with open(generated, "rb") as src, open(output_path, "wb") as dst:
             dst.write(src.read())
@@ -786,42 +834,33 @@ def _sanitize_derived_pdf(document) -> dict:
             page.delete_annot(annot)
             report["annotations_removed"] += 1
 
-    try:
-        if document.get_toc():
-            document.set_toc([])
-            report["outline_removed"] = True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("No se pudo eliminar el índice del PDF derivado: %s", type(exc).__name__)
+        if page.first_annot is not None:
+            raise ValueError("Quedan anotaciones en la copia.")
+        for widget in list(page.widgets()):
+            page.delete_widget(widget)
 
-    try:
-        document.scrub(
-            attached_files=True,
-            clean_pages=False,      # no reescribir contenidos ya expurgados
-            embedded_files=True,
-            hidden_text=False,      # conservar la capa OCR invisible ya analizada
-            javascript=True,
-            metadata=True,
-            redactions=True,
-            redact_images=0,
-            remove_links=True,
-            reset_fields=True,
-            reset_responses=True,
-            thumbnails=True,
-            xml_metadata=True,
-        )
-        report["scrubbed"] = True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("scrub() no disponible o fallido (%s); saneado parcial", type(exc).__name__)
-        document.set_metadata({})
-        try:
-            document.del_xml_metadata()
-        except Exception as inner:  # noqa: BLE001
-            logger.debug("No se pudo eliminar metadatos XMP: %s", inner, exc_info=True)
-        try:
-            for name in list(document.embfile_names()):
-                document.embfile_del(name)
-        except Exception as inner:  # noqa: BLE001
-            logger.debug("No se pudieron eliminar adjuntos: %s", inner, exc_info=True)
+    # Eliminar también campos sin representación visual y valores predeterminados.
+    document.xref_set_key(document.pdf_catalog(), "AcroForm", "null")
+    if document.get_toc():
+        document.set_toc([])
+        report["outline_removed"] = True
+
+    document.scrub(
+        attached_files=True,
+        clean_pages=False,      # no reescribir contenidos ya expurgados
+        embedded_files=True,
+        hidden_text=False,      # conservar la capa OCR invisible ya analizada
+        javascript=True,
+        metadata=True,
+        redactions=True,
+        redact_images=0,
+        remove_links=True,
+        reset_fields=True,
+        reset_responses=True,
+        thumbnails=True,
+        xml_metadata=True,
+    )
+    report["scrubbed"] = True
 
     return report
 
@@ -879,7 +918,7 @@ def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_pa
                     rect[2] / scale,
                     rect[3] / scale,
                 )
-                page.add_redact_annot(pdf_rect, fill=(0, 0, 0))
+                page.add_redact_annot(pdf_rect * page.derotation_matrix, fill=(0, 0, 0))
                 total_rectangles += 1
 
             # apply_redactions elimina texto, vectores y recorta imágenes
@@ -897,15 +936,17 @@ def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_pa
     finally:
         document.close()
 
+    projection = projection_report(metadata["pages"], confirmed)
     result = {
         "mode": "native",
         "pages_touched": pages_touched,
         "total_rectangles": total_rectangles,
-        "findings_signature": _signature_for_findings(findings),
+        "findings_signature": signature_for_findings(findings),
         "text_removed": True,
         "metadata_stripped": True,
         "sanitized": sanitized,
-        "projection": projection_report(metadata.get("pages", []), confirmed),
+        "projection": projection,
+        "issues": _review_issues(metadata["pages"], findings, projection),
     }
     logger.info(
         "Expurgo nativo aplicado: %d rectángulos en %d páginas -> %s",

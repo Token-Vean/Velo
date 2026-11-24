@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 import json
 import logging
 import os
 import re
 import shutil
+import tempfile
 import time
 import uuid
+from datetime import datetime
 
 from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
@@ -30,7 +33,8 @@ from velo_engine.security import hash_text, init_security, log_audit, para_log
 from velo_engine.visual import (
     apply_redactions_to_original,
     export_native_redacted_pdf,
-    export_visual_redacted_pdf,
+    load_session_metadata,
+    signature_for_findings,
     load_applied_metadata,
     read_pdf_for_visual_review,
     visual_capabilities,
@@ -88,7 +92,7 @@ def _clean_findings(raw) -> list[dict] | None:
         ):
             return None
         status = item.get("status")
-        if status not in _FINDING_STATUSES:
+        if not isinstance(status, str) or status not in _FINDING_STATUSES:
             return None
         cleaned.append({
             **{k: v for k, v in item.items() if k != "position"},
@@ -404,6 +408,7 @@ def analyze_file():
                 "visual_available": True,
                 "visual_session": session_id,
                 "visual_pages": visual_meta["pages"],
+                "extraction_notes": [p["coverage_note"] for p in visual_meta["pages"] if p.get("coverage_note")],
                 "visual_mode": visual_meta["mode"],
                 "visual_ocr_used": visual_meta["ocr_used"],
                 **result,
@@ -432,6 +437,8 @@ def analyze_file():
         text, fmt, error = read_file(filepath)
         if not error and ext == ".docx":
             notes = docx_review_notes(filepath)
+        elif not error and ext == ".pdf":
+            notes = ["Solo se ha extraído texto. Revise en el original las imágenes y páginas escaneadas."]
     finally:
         _remove_temp_file(filepath)
 
@@ -469,7 +476,7 @@ def analyze_file():
 @app.route("/api/export", methods=["POST"])
 def export_envelope():
     data = request.get_json(silent=True)
-    if not data:
+    if not isinstance(data, dict) or not data:
         return jsonify({"error": "Petición inválida."}), 400
 
     raw_id = data.get("document_id", f"DOC-{uuid.uuid4().hex[:8].upper()}")
@@ -485,20 +492,69 @@ def export_envelope():
     layers_active = [str(item)[:32] for item in layers_active[:8]]
     layers_available = [str(item)[:32] for item in layers_available[:8]]
 
+    stamp = data.get("analysis_date")
+    if stamp is not None:
+        try:
+            datetime.fromisoformat(stamp)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Fecha de análisis inválida."}), 400
+    notes = data.get("extraction_notes", [])
+    if not isinstance(notes, list) or any(not isinstance(n, str) for n in notes):
+        return jsonify({"error": "Avisos de cobertura inválidos."}), 400
+    source_format = data.get("source_format")
+    if source_format not in (None, "txt", "pdf", "docx"):
+        return jsonify({"error": "Formato de origen inválido."}), 400
+    envelope = build_envelope(document_id, findings, layers_active, layers_available, stamp)
+    envelope.update(source_format=source_format, extraction_notes=notes,
+                    visual_review={"session_active": False}, original_application={"generated": False})
+    assessment = data.get("risk_assessment_note", "")
+    if not isinstance(assessment, str) or len(assessment) > 2000:
+        return jsonify(error="La valoración profesional admite hasta 2.000 caracteres."), 400
+    envelope["audit"]["residual_risk_reviewed"] = data.get("risk_reviewed") is True
+    envelope["audit"]["residual_risk_note"] = assessment
+    session_id = _sanitize_id(data.get("session_id"))
+    if session_id:
+        directory = _session_dir(session_id, create=False)
+        try:
+            meta = load_session_metadata(directory)
+            envelope["visual_review"] = {"session_active": True, "mode": meta["mode"], "page_count": meta["page_count"]}
+            try:
+                applied = load_applied_metadata(directory)
+            except FileNotFoundError:
+                applied = {}
+        except (OSError, ValueError):
+            return jsonify({"error": "La sesión visual ha caducado. Analice de nuevo el PDF."}), 409
+        envelope["extraction_notes"] = [p["coverage_note"] for p in meta["pages"] if p.get("coverage_note")]
+        if applied.get("findings_signature") == signature_for_findings(findings):
+            envelope["original_application"] = {
+                "generated": True, "mode": "image", "page_count": applied["page_count"],
+                "total_rectangles": applied["total_rectangles"], "projection": applied.get("projection"),
+                "issues": applied.get("issues"), "revision": applied.get("revision"),
+            }
+    content = json.dumps(envelope, ensure_ascii=False, indent=2).encode("utf-8")
+    snapshot = hashlib.sha256(content).hexdigest()
+    if data.get("preview") is True:
+        return jsonify(success=True, report_text=content.decode("utf-8"), snapshot=snapshot)
+    if "snapshot" in data and data["snapshot"] != snapshot:
+        return jsonify({"error": "La revisión ha cambiado. Vuelva a comprobar el informe antes de guardarlo."}), 409
+
     log_audit("export", f"DOC={document_id} FINDINGS={len(findings)}")
     prune_stale_export_reports()
-    envelope = build_envelope(document_id, findings, layers_active, layers_available)
     workspace = _workspace_dir()
-    export_filename = f"{document_id}_pii_report.json"
-    export_path = os.path.join(workspace, export_filename)
-
+    export_path = os.path.join(workspace, f"{document_id}_pii_report.json")
     if not _is_within(workspace, export_path):
         return jsonify({"error": "Ruta de exportación no válida."}), 400
-
-    with open(export_path, "w", encoding="utf-8") as f_handle:
-        json.dump(envelope, f_handle, ensure_ascii=False, indent=2)
-
-    return jsonify({"success": True, "envelope": envelope})
+    # Los lectores ven el informe anterior o el nuevo, incluso si el guardado falla.
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=workspace, suffix=".tmp", delete=False) as tmp:
+            tmp_path = tmp.name
+            tmp.write(content)
+        os.replace(tmp_path, export_path)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+    return jsonify(success=True, envelope=envelope)
 
 
 @app.route("/api/session/apply-original", methods=["POST"])
@@ -539,18 +595,25 @@ def download_applied_original_pdf(session_id):
     except Exception:
         return jsonify({"error": "No existe todavía una versión editada del original en esta sesión."}), 404
 
-    output_path = os.path.join(session_dir, applied.get("pdf_name", "original_redacted.pdf"))
-    if not os.path.exists(output_path):
-        return jsonify({"error": "No existe todavía una versión editada del original en esta sesión."}), 404
+    if "issues" not in applied:
+        return jsonify(error="Vuelva a aplicar el testado con la versión actual."), 409
+    if request.args.get("revision", applied.get("revision")) != applied.get("revision"):
+        return jsonify(error="La copia ha cambiado. Vuelva a revisar las páginas."), 409
+    output_path = os.path.join(session_dir, applied["pdf_name"])
+    return _send_reviewed_pdf(output_path, "copia_testada.pdf", applied, request.args.get("draft") == "1")
 
-    with open(output_path, "rb") as handle:
-        pdf_bytes = handle.read()
-    return send_file(
-        io.BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=applied.get("pdf_name", "original_redacted.pdf"),
-    )
+
+def _send_reviewed_pdf(path, name, stats, allow_draft):
+    issues = stats["issues"]
+    if issues and not allow_draft:
+        return jsonify(error="La copia requiere revisión.", draft_available=True, issues=issues), 409
+    with open(path, "rb") as handle:
+        response = send_file(io.BytesIO(handle.read()), mimetype="application/pdf", as_attachment=True,
+                             download_name=("BORRADOR_" if issues else "") + name)
+    response.headers["X-Velo-Estado"] = "borrador" if issues else "testado"
+    for key, header in (("unprojected", "X-Velo-Sin-Proyectar"), ("partial", "X-Velo-Proyeccion-Parcial")):
+        response.headers[header] = ",".join(_sanitize_id(i) for i in stats["projection"][key])[:2000]
+    return response
 
 
 @app.route("/api/export/redacted-pdf", methods=["POST"])
@@ -584,42 +647,19 @@ def export_redacted_pdf():
 
     suffix = "native_redacted" if redaction_mode == "native" else "visual_redacted"
     output_name = f"{document_id or 'DOC'}_{suffix}.pdf"
-    output_path = os.path.join(session_dir, output_name)
-
-    projection = {"unprojected": [], "partial": []}
+    allow_draft = data.get("draft") is True
     try:
-        if redaction_mode == "native":
-            native_stats = export_native_redacted_pdf(session_dir, findings, output_path)
-            projection = native_stats.get("projection", projection)
-            log_audit(
-                "export_native_pdf",
-                f"DOC={document_id} RECT={native_stats['total_rectangles']} "
-                f"PAGES={native_stats['pages_touched']} "
-                f"SIN_PROYECTAR={len(projection['unprojected'])} PARCIALES={len(projection['partial'])}",
-            )
-        else:
-            export_visual_redacted_pdf(session_dir, findings, output_path)
-            try:
-                projection = load_applied_metadata(session_dir).get("projection", projection)
-            except Exception:  # noqa: BLE001
-                logger.debug("Sin metadatos de proyección tras la exportación imagen", exc_info=True)
+        if redaction_mode == "image":
+            stats = apply_redactions_to_original(session_dir, session_id, findings)
+            return _send_reviewed_pdf(os.path.join(session_dir, stats["pdf_name"]), output_name, stats, allow_draft)
+        with tempfile.TemporaryDirectory(dir=session_dir) as output_dir:
+            path = os.path.join(output_dir, output_name)
+            stats = export_native_redacted_pdf(session_dir, findings, path)
+            log_audit("export_native_pdf", f"DOC={document_id} RECT={stats['total_rectangles']} INCIDENCIAS={len(stats['issues'])}")
+            return _send_reviewed_pdf(path, output_name, stats, allow_draft)
     except Exception:
-        logger.exception("No se pudo exportar el PDF (modo=%s)", redaction_mode)
-        return jsonify({"error": "No se pudo exportar el PDF redactado."}), 400
-
-    with open(output_path, "rb") as handle:
-        pdf_bytes = handle.read()
-    response = send_file(
-        io.BytesIO(pdf_bytes),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=output_name,
-    )
-    # Hallazgos confirmados que no pudieron tacharse (sin coordenadas en el
-    # PDF): la interfaz avisa al archivero tras la descarga.
-    response.headers["X-Velo-Sin-Proyectar"] = ",".join(_sanitize_id(i) for i in projection["unprojected"])[:2000]
-    response.headers["X-Velo-Proyeccion-Parcial"] = ",".join(_sanitize_id(i) for i in projection["partial"])[:2000]
-    return response
+        logger.exception("No se pudo completar el testado del PDF (modo=%s)", redaction_mode)
+        return jsonify(error="No se pudo completar el testado y saneado de la copia. Revise el original o utilice la copia visual."), 400
 
 
 @app.route("/api/session/<session_id>/asset/<filename>")
@@ -674,7 +714,7 @@ def status():
                     "image": bool(visual.get("fitz") and visual.get("pillow")),
                     "native": bool(visual.get("native_redaction")),
                 },
-                "note": "La revisión visual de PDF usa la imagen original por página y coordina los tachados con la base textual/OCR de esa misma sesión. El modo 'native' elimina realmente el texto subyacente (expurgo ISO/IEC 27038) en lugar de taparlo.",
+                "note": "La revisión visual de PDF usa la imagen original por página y coordina los tachados con la base textual/OCR de esa misma sesión. El modo 'native' elimina realmente el texto subyacente (testado de la copia PDF) en lugar de taparlo.",
             },
         }
     )

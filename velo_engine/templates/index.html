@@ -667,23 +667,26 @@
         <h2 class="title">Exportación</h2>
         <p class="desc" id="exportSummary"></p>
         <div class="stat-cards" id="exportStats"></div>
-        <div class="panel" id="riskAssessment" style="margin-bottom:14px;"></div>
+
         <div class="panel checks" style="margin-bottom:14px;">
             <div style="font-weight:800;margin-bottom:10px;">Verificación antes de exportar</div>
             <label class="check-row"><input type="checkbox" id="chkPurpose" data-change="checkCompliance"><span>El tratamiento tiene una finalidad legítima documentada.</span></label>
             <label class="check-row"><input type="checkbox" id="chkReview" data-change="checkCompliance"><span>He revisado todos los hallazgos y he validado las correcciones.</span></label>
-            <label class="check-row"><input type="checkbox" id="chkRisk" data-change="checkCompliance"><span>He valorado el riesgo de reidentificación del resultado visible.</span></label>
+            <label class="check-row"><input type="checkbox" id="chkRisk" data-change="refreshReport"><span>He valorado el riesgo de reidentificación del resultado visible.</span></label>
+            <label for="riskNote">Valoración profesional del riesgo residual (opcional)</label>
+            <textarea id="riskNote" maxlength="2000" rows="2" placeholder="Indique qué datos o combinaciones ha revisado."></textarea>
             <div style="font-size:12px;color:var(--text-3);margin-top:8px;">La copia exportada no modifica el original fuente fuera de la sesión. El informe JSON deja traza de revisión. Si se ha aplicado la edición sobre el original, la descarga corresponde a una copia derivada visual del PDF original ya redactada.</div>
         </div>
+        <p><strong>Informe interno con datos personales.</strong> El JSON incluye los valores detectados y las decisiones de revisión.</p>
         <div class="json-output" id="jsonOutput"></div>
         <div style="display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:14px;">
-            <button class="btn" data-action="copyJSON">Copiar JSON</button>
+            <button class="btn" id="btnCopy" disabled data-action="copyJSON">Copiar JSON</button>
             <button class="btn" id="btnSave" disabled data-action="saveJSON">Guardar informe</button>
             <button class="btn" id="btnDerivedPdf" disabled data-action="exportDerivedPDF">Generar copia textual</button>
-            <button class="btn btn-accent hidden" id="btnAppliedPdf" disabled data-action="downloadAppliedOriginal">Descargar original editado</button>
-            <button class="btn btn-accent hidden" id="btnNativePdf" disabled data-action="downloadNativeRedactedPdf">Descargar PDF con expurgo nativo</button>
+            <button class="btn btn-accent hidden" id="btnAppliedPdf" disabled data-action="downloadAppliedOriginal">Descargar copia visual</button>
+            <button class="btn btn-accent hidden" id="btnNativePdf" disabled data-action="downloadNativeRedactedPdf">Descargar copia PDF testada</button>
         </div>
-        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la copia visual rasteriza las páginas y materializa máscaras negras. El expurgo nativo elimina el contenido subyacente en las zonas confirmadas y conserva la capa de texto del resto del PDF.</div>
+        <div class="info-box neutral" style="margin-top:14px;"><strong>ISO/IEC 27038:</strong> la copia visual rasteriza las páginas y materializa máscaras negras. El testado de la copia PDF elimina el contenido subyacente en las zonas confirmadas y conserva la capa de texto del resto del PDF.</div>
         <div class="info-box neutral" style="margin-top:6px;"><strong>ISO/IEC 20889:</strong> el informe conserva la técnica seleccionada para cada hallazgo, aunque la materialización visual del PDF original se realiza como tachado gráfico.</div>
     </div>
 

@@ -366,8 +366,8 @@ def spacy_status():
     return {"installed": model_name is not None, "model": model_name, "error": _SPACY_ERROR}
 
 
-def build_envelope(document_id, findings, layers_active, layers_available):
-    now = datetime.now().isoformat()
+def build_envelope(document_id, findings, layers_active, layers_available, analysis_date=None):
+    now = analysis_date or datetime.now().isoformat()
     findings = [item for item in findings if isinstance(item, dict)]
     confirmed = [item for item in findings if item.get("status") == "confirmed"]
     discarded = [item for item in findings if item.get("status") == "discarded"]
@@ -409,6 +409,7 @@ def build_envelope(document_id, findings, layers_active, layers_available):
         ],
         "summary": {
             "total_detected": len(findings),
+            "pending": len(findings) - len(confirmed) - len(discarded),
             "confirmed": len(confirmed),
             "discarded": len(discarded),
             "categories_found": sorted({str(item.get("category")) for item in confirmed}),

@@ -8,26 +8,26 @@ set "PYTHONDONTWRITEBYTECODE=1"
 
 echo.
 echo  ======================================================
-echo   Velo - Detector de datos sensibles v0.5.0
+echo   Velo - Detector de datos sensibles v0.6.0
 echo  ======================================================
 echo.
 
 set "PYTHON_CMD="
 where python >nul 2>&1
-if %errorlevel% equ 0 (
+if not errorlevel 1 (
     python -c "import sys; assert sys.version_info >= (3, 11)" >nul 2>&1
     if !errorlevel! equ 0 set "PYTHON_CMD=python"
 )
 if not defined PYTHON_CMD (
     where py >nul 2>&1
-    if %errorlevel% equ 0 (
+    if not errorlevel 1 (
         py -3 -c "import sys; assert sys.version_info >= (3, 11)" >nul 2>&1
         if !errorlevel! equ 0 set "PYTHON_CMD=py -3"
     )
 )
 if not defined PYTHON_CMD (
     where python3 >nul 2>&1
-    if %errorlevel% equ 0 (
+    if not errorlevel 1 (
         python3 -c "import sys; assert sys.version_info >= (3, 11)" >nul 2>&1
         if !errorlevel! equ 0 set "PYTHON_CMD=python3"
     )
@@ -35,8 +35,7 @@ if not defined PYTHON_CMD (
 if not defined PYTHON_CMD (
     echo   [ERROR] No se ha encontrado Python 3.11+ en este equipo.
     echo.
-    pause
-    goto :eof
+    goto :fallo
 )
 
 echo   [OK] Python detectado: %PYTHON_CMD%
@@ -48,8 +47,7 @@ if not exist ".venv\Scripts\python.exe" (
         echo.
         echo   [ERROR] No se pudo crear el entorno virtual .venv.
         echo.
-        pause
-        goto :eof
+        goto :fallo
     )
 )
 
@@ -65,8 +63,7 @@ if errorlevel 1 (
     echo.
     echo   [ERROR] No se pudo actualizar pip dentro de .venv.
     echo.
-    pause
-    goto :eof
+    goto :fallo
 )
 
 echo.
@@ -78,14 +75,18 @@ if errorlevel 1 (
     echo           Si pip informa de un hash que no coincide, NO lo fuerce:
     echo           puede indicar una descarga manipulada. Avise en el repositorio.
     echo.
-    pause
-    goto :eof
+    goto :fallo
 )
 
 echo.
 echo   Intentando instalar dependencias visuales opcionales...
 %VENV_PY% %PIP_VERIFICADO% -r locks\requirements-visual.lock
 if errorlevel 1 (
+    %VENV_PY% -c "import importlib.util as u; import sys; sys.exit(u.find_spec('pymupdf') is None and u.find_spec('fitz') is None)"
+    if not errorlevel 1 (
+        echo   [ERROR] La capa PDF instalada no pudo actualizarse. Repita la instalacion.
+        goto :fallo
+    )
     echo   [AVISO] No se pudieron instalar las dependencias visuales.
     echo           Velo arrancara igualmente en modo base.
 ) else (
@@ -93,32 +94,28 @@ if errorlevel 1 (
 )
 
 echo.
-%VENV_PY% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo  ------------------------------------------------------
-    echo   DETECCION DE NOMBRES Y APELLIDOS (opcional)
-    echo  ------------------------------------------------------
-    echo.
+set "INSTALL_NLP=S"
+%VENV_PY% -m pip show spacy >nul 2>&1
+if errorlevel 1 (
     set "INSTALL_NLP="
     set /p "INSTALL_NLP=  Desea instalar la deteccion de nombres? S/N: "
-    if /i "!INSTALL_NLP!"=="S" (
-        echo.
-        echo   Instalando spaCy y el modelo es_core_news_md ^(verificados por hash^)...
-        %VENV_PY% %PIP_VERIFICADO% -r locks\requirements-nlp.lock
-        if errorlevel 1 (
-            echo   [AVISO] No se pudo instalar spaCy o su modelo.
-            echo           Velo arrancara igualmente en modo regex.
-        ) else (
-            echo   [OK] spaCy y modelo espanol instalados
-        )
-    ) else (
-        echo   [--] Deteccion de nombres omitida.
-    )
-) else (
-    echo   [OK] spaCy y modelo es_core_news_md ya instalados
 )
+if /i "!INSTALL_NLP!"=="S" (
+    echo   Sincronizando spaCy y el modelo espanol con las versiones verificadas...
+    %VENV_PY% %PIP_VERIFICADO% -r locks\requirements-nlp.lock
+    if errorlevel 1 (
+        %VENV_PY% -m pip show spacy >nul 2>&1
+        if not errorlevel 1 (
+            echo   [ERROR] La capa linguistica instalada no pudo actualizarse. Repita la instalacion.
+            goto :fallo
+        )
+        echo   [AVISO] Deteccion de nombres no disponible.
+    )
+)
+%VENV_PY% -m pip check
+if errorlevel 1 goto :fallo
+if /i "%~1"=="--solo-instalar" exit /b 0
 
-echo.
 echo   Velo solo escribe en esta carpeta y en %LOCALAPPDATA%\Velo.
 echo   Para eliminarlo por completo: desinstalar.bat
 echo.
@@ -136,3 +133,9 @@ if not "%EXITCODE%"=="0" (
 )
 echo.
 pause
+
+exit /b %EXITCODE%
+
+:fallo
+if /i not "%~1"=="--solo-instalar" pause
+exit /b 1

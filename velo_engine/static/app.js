@@ -17,6 +17,11 @@ function apiFetch(url, options = {}) {
 
 let currentStep = 0;
 let documentText = "";
+let textUnits = "";
+let reviewId = "";
+let analysisDate = "";
+let reportPreview = null;
+let previewGeneration = 0;
 let findings = [];
 let layersActive = [];
 let layersAvailable = [];
@@ -76,7 +81,7 @@ function updateStepUI() {
         btnNext.textContent = "Siguiente: aplicar sobre original";
     } else if (currentStep === 4) {
         btnNext.textContent = "Ir a exportación";
-        btnNext.disabled = visualAvailable && (!appliedOriginal || applyingOriginal);
+        btnNext.disabled = applyingOriginal || (findings.some(f => f.status === "confirmed") && !appliedOriginal);
     } else {
         btnNext.textContent = "Siguiente";
     }
@@ -191,6 +196,11 @@ async function analyze() {
         if (!response.ok || data.error) throw new Error(data.error || "No se pudo analizar el documento.");
 
         documentText = data.text;
+        textUnits = /[\u{10000}-\u{10ffff}]/u.test(documentText) ? Array.from(documentText) : documentText;
+        reviewId = "DOC-" + crypto.randomUUID().toUpperCase();
+        analysisDate = new Date().toISOString();
+        document.getElementById("riskNote").value = "";
+        reportPreview = null;
         findings = data.findings || [];
         findingCounter = findings.length;
         layersActive = data.layers_active || ["regex"];
@@ -209,7 +219,7 @@ async function analyze() {
         setStepLabels();
 
         goToStep(1);
-        setTimeout(() => goToStep(2), 700);
+        if (!extractionNotes.length) setTimeout(() => { if (currentStep === 1) goToStep(2); }, 700);
     } catch (err) {
         alert("Error: " + err.message);
     } finally {
@@ -242,18 +252,23 @@ function renderAnalysis() {
     document.getElementById("analysisMeta").innerHTML = meta;
 }
 
+function sliceText(start, end) {
+    const value = textUnits.slice(start, end);
+    return typeof value === "string" ? value : value.join("");
+}
+
 function renderHighlightedDoc() {
     const activeFindings = findings.filter(f => f.status !== "discarded").sort((a, b) => a.position.start - b.position.start);
     let html = "";
     let last = 0;
     for (const finding of activeFindings) {
-        if (finding.position.start > last) html += escapeHtml(documentText.slice(last, finding.position.start));
+        if (finding.position.start > last) html += escapeHtml(sliceText(last, finding.position.start));
         const color = CATEGORY_COLORS[finding.category] || "#6B7280";
         const opacity = finding.status === "confirmed" ? "35" : "18";
-        html += `<mark class="pii-mark" style="background:${color}${opacity};border-bottom:2px solid ${color};" title="${escapeAttr(finding.label)}">${escapeHtml(documentText.slice(finding.position.start, finding.position.end))}</mark>`;
+        html += `<mark class="pii-mark" style="background:${color}${opacity};border-bottom:2px solid ${color};" title="${escapeAttr(finding.label)}">${escapeHtml(sliceText(finding.position.start, finding.position.end))}</mark>`;
         last = finding.position.end;
     }
-    if (last < documentText.length) html += escapeHtml(documentText.slice(last));
+    if (last < documentText.length) html += escapeHtml(sliceText(last));
     document.getElementById("docView").innerHTML = html;
 }
 
@@ -299,6 +314,10 @@ function updateReviewStats() {
 }
 
 function renderReview() {
+    if (appliedOriginal && appliedSignature !== confirmedFindingsSignature()) {
+        appliedOriginal = null;
+        appliedSignature = null;
+    }
     renderHighlightedDoc();
     renderFindingsList();
     updateReviewStats();
@@ -325,6 +344,7 @@ function setStatus(id, status) {
 
 function setTechnique(id, technique) {
     findings = findings.map(f => f.id === id ? { ...f, technique } : f);
+    renderReview();
 }
 
 function confirmAll() {
@@ -336,8 +356,8 @@ function getSelectionOffsets(root, range) {
     const preRange = range.cloneRange();
     preRange.selectNodeContents(root);
     preRange.setEnd(range.startContainer, range.startOffset);
-    const start = preRange.toString().length;
-    return { start, end: start + range.toString().length };
+    const start = Array.from(preRange.toString()).length;
+    return { start, end: start + Array.from(range.toString()).length };
 }
 
 function onDocSelection() {
@@ -352,7 +372,7 @@ function onDocSelection() {
     const offsets = getSelectionOffsets(docView, range);
     const overlaps = findings.some(f => f.status !== "discarded" && !(offsets.end <= f.position.start || offsets.start >= f.position.end));
     if (overlaps) return;
-    manualSelection = { text: documentText.slice(offsets.start, offsets.end), start: offsets.start, end: offsets.end };
+    manualSelection = { text: sliceText(offsets.start, offsets.end), start: offsets.start, end: offsets.end };
     document.getElementById("popupSelectedText").textContent = manualSelection.text;
     let options = "";
     Object.keys(CATEGORY_COLORS).forEach(cat => {
@@ -433,8 +453,9 @@ function renderVisualReview() {
         html += `<div class="visual-page">
     <div class="visual-page-header">
         <div><strong>Página ${page.page}</strong></div>
-        <div style="font-size:12px;color:var(--text-2);">Fuente: ${page.source}</div>
+        <div style="font-size:12px;color:var(--text-2);">Fuente: ${escapeHtml(page.source)}</div>
     </div>
+    ${page.coverage_note ? `<p>${escapeHtml(page.coverage_note)}</p>` : ""}
     <div class="visual-stage">
         <div class="page-canvas" style="width:${page.width}px;">
             <img src="${page.image_url}" alt="Página ${page.page}">
@@ -461,10 +482,6 @@ function projectionWarning(unprojected, partial) {
     if (partial.length) parts.push(`${partial.length} hallazgo(s) solo se han tachado parcialmente (${partial.join(", ")}).`);
     if (!parts.length) return "";
     return parts.join(" ") + " Revise visualmente esas páginas antes de difundir el PDF o use la salida textual.";
-}
-
-function headerList(response, name) {
-    return (response.headers.get(name) || "").split(",").map(v => v.trim()).filter(Boolean);
 }
 
 function renderAppliedOriginalPages() {
@@ -509,7 +526,7 @@ function renderOriginalApplication() {
     document.getElementById("btnApplyOriginal").disabled = applyingOriginal;
     if (appliedOriginal) {
         const projection = appliedOriginal.projection || {};
-        const warning = projectionWarning(projection.unprojected || [], projection.partial || []);
+        const warning = (appliedOriginal.issues || []).join(" ") || projectionWarning(projection.unprojected || [], projection.partial || []);
         document.getElementById("applyOriginalStatus").innerHTML = `La edición ya se ha aplicado sobre una copia derivada del original. Páginas generadas: <strong>${appliedOriginal.page_count}</strong>. Máscaras materializadas: <strong>${appliedOriginal.total_rectangles}</strong>.` + (warning ? `<div style="margin-top:8px;color:var(--danger);"><strong>Atención:</strong> ${escapeHtml(warning)}</div>` : "");
         renderAppliedOriginalPages();
     } else {
@@ -559,125 +576,58 @@ async function applyOriginalEdits(button) {
     }
 }
 
-function buildEnvelope() {
-    const now = new Date().toISOString();
-    const confirmed = findings.filter(f => f.status === "confirmed");
-    const discarded = findings.filter(f => f.status === "discarded");
-    return {
-        document_id: "DOC-" + Date.now().toString(36).toUpperCase(),
-        analysis_date: now,
-        tool: "velo",
-        version: APP_VERSION,
-        layers_active: layersActive,
-        layers_available: layersAvailable,
-        source_format: currentFormat,
-        visual_review: visualAvailable ? {
-            session_active: true,
-            mode: visualMode,
-            page_count: visualPages.length,
-            based_on_original_pdf_images: true
-        } : {
-            session_active: false,
-            based_on_original_pdf_images: false
-        },
-        original_application: visualAvailable ? {
-            generated: Boolean(appliedOriginal),
-            page_count: appliedOriginal ? appliedOriginal.page_count : 0,
-            total_rectangles: appliedOriginal ? appliedOriginal.total_rectangles : 0,
-            based_on_ocr_or_text_layer: true
-        } : {
-            generated: false,
-            based_on_ocr_or_text_layer: false
-        },
-        normative_framework: {
-            redaction: "ISO/IEC 27038",
-            anonymization_techniques: "ISO/IEC 20889",
-            reidentification_risk: "ISO/IEC 27559",
-            privacy_framework: "ISO/IEC 29100",
-            privacy_management: "ISO/IEC 27701"
-        },
-        findings: confirmed.map(f => ({
-            id: f.id,
-            text: f.text,
-            category: f.category,
-            type: f.type,
-            label: f.label,
-            position: f.position,
-            confidence: f.confidence,
-            method: f.method,
-            human_decision: "confirmed",
-            technique: f.technique || "suppression"
-        })),
-        discarded: discarded.map(f => ({ id: f.id, text: f.text, type: f.type, reason: "false_positive" })),
-        summary: {
-            total_detected: findings.length,
-            confirmed: confirmed.length,
-            discarded: discarded.length,
-            categories_found: [...new Set(confirmed.map(f => f.category))],
-            types_found: [...new Set(confirmed.map(f => f.type))]
-        },
-        audit: {
-            reviewed_by: "archivero",
-            review_date: now.split("T")[0],
-            tool_version: APP_VERSION,
-            execution: "local"
-        }
+async function refreshReport() {
+    const generation = ++previewGeneration;
+    reportPreview = null;
+    const output = document.getElementById("jsonOutput");
+    output.textContent = "Preparando el informe…";
+    checkCompliance();
+    const payload = {
+        document_id: reviewId, analysis_date: analysisDate, findings, source_format: currentFormat,
+        layers_active: layersActive, layers_available: layersAvailable, session_id: visualSession,
+        extraction_notes: extractionNotes, risk_reviewed: document.getElementById("chkRisk").checked,
+        risk_assessment_note: document.getElementById("riskNote").value
     };
-}
-
-function assessRisk(confirmed) {
-    const pending = findings.filter(f => f.status === "pending").length;
-    let direct = 0;
-    let quasi = 0;
-    confirmed.forEach(f => {
-        if (["dni", "nie", "nss", "email", "iban"].includes(f.type)) direct += 1;
-        if (["person_name", "address", "phone", "date_birth", "postal_code", "location"].includes(f.type)) quasi += 1;
-    });
-    let level = "ALTO";
-    let text = "No se ha confirmado ningún dato sensible. Revise el documento antes de exportar.";
-    let color = "#DC2626";
-    if (pending > 0) {
-        level = "ALTO";
-        text = `Quedan ${pending} hallazgo(s) sin revisar. Confírmelos o descártelos antes de exportar: los pendientes no se tachan.`;
-        color = "#DC2626";
-    } else if (confirmed.length >= 3) {
-        level = "BAJO";
-        text = `Se han tratado ${confirmed.length} hallazgos. Verifique que los datos residuales no permitan reidentificación por combinación.`;
-        color = "#15803D";
-    } else if (confirmed.length > 0) {
-        level = "MEDIO";
-        text = "Se han confirmado pocos hallazgos. Revise si quedan datos no marcados, especialmente cuasi-identificadores.";
-        color = "#D97706";
+    try {
+        const response = await apiFetch("/api/export", {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({...payload, preview: true})
+        });
+        const result = await response.json();
+        if (generation !== previewGeneration) return;
+        if (!response.ok) throw new Error(result.error || "No se pudo preparar el informe.");
+        reportPreview = {...payload, snapshot: result.snapshot};
+        output.textContent = result.report_text;
+    } catch (err) {
+        if (generation === previewGeneration) output.textContent = err.message;
     }
-    document.getElementById("riskAssessment").innerHTML = `<div style="font-weight:800;margin-bottom:10px;">ISO/IEC 27559 — Riesgo de reidentificación</div>
-<div style="display:inline-block;padding:4px 12px;border-radius:999px;background:${color}18;color:${color};font-size:11px;font-weight:800;margin-bottom:10px;">${level}</div>
-<div style="color:var(--text-2);line-height:1.55;">${text}</div>
-<div style="font-size:12px;color:var(--text-3);margin-top:8px;">Identificadores directos tratados: ${direct} · Cuasi-identificadores tratados: ${quasi} · Pendientes: ${pending}</div>
-<div style="font-size:12px;color:var(--text-3);margin-top:4px;">Indicador orientativo basado en el recuento de hallazgos; no sustituye una evaluación de riesgo de reidentificación.</div>`;
+    checkCompliance();
 }
 
 function renderExport() {
     const confirmed = findings.filter(f => f.status === "confirmed");
     const discarded = findings.filter(f => f.status === "discarded");
-    document.getElementById("exportSummary").innerHTML = `${confirmed.length} confirmados · ${discarded.length} descartados.${visualAvailable ? (appliedOriginal ? ' La copia editada del original está lista para descarga.' : ' Puede generarse una copia editada del original antes de exportar.') : ''}`;
-    document.getElementById("exportStats").innerHTML = `
-<div class="stat-card"><div class="num" style="color:var(--confirm)">${confirmed.length}</div><div class="lbl">Confirmados</div></div>
-<div class="stat-card"><div class="num">${discarded.length}</div><div class="lbl">Descartados</div></div>
-<div class="stat-card"><div class="num">${[...new Set(confirmed.map(f => f.type))].length}</div><div class="lbl">Tipos</div></div>`;
-    assessRisk(confirmed);
-    document.getElementById("jsonOutput").textContent = JSON.stringify(buildEnvelope(), null, 2);
+    const pending = findings.length - confirmed.length - discarded.length;
+    const issues = appliedOriginal?.issues || extractionNotes;
+    document.getElementById("exportSummary").textContent = issues.length
+        ? "La revisión contiene incidencias: " + issues.join(" ")
+        : "Compruebe el contenido residual de la copia antes de difundirla.";
+    document.getElementById("exportStats").innerHTML = [
+        [confirmed.length, "Confirmados"], [discarded.length, "Descartados"], [pending, "Pendientes"]
+    ].map(([count, label]) => `<div class="stat-card"><div class="num">${count}</div><div class="lbl">${label}</div></div>`).join("");
     document.getElementById("chkPurpose").checked = false;
     document.getElementById("chkReview").checked = false;
     document.getElementById("chkRisk").checked = false;
     document.getElementById("btnAppliedPdf").classList.toggle("hidden", !visualAvailable);
     document.getElementById("btnNativePdf").classList.toggle("hidden", !visualAvailable || !nativeRedactionAvailable);
-    checkCompliance();
+    refreshReport();
 }
 
 function checkCompliance() {
-    const ok = document.getElementById("chkPurpose").checked && document.getElementById("chkReview").checked && document.getElementById("chkRisk").checked;
+    const ok = !findings.some(f => f.status === "pending") && document.getElementById("chkPurpose").checked && document.getElementById("chkReview").checked && document.getElementById("chkRisk").checked;
     const hasConfirmed = findings.some(f => f.status === "confirmed");
-    document.getElementById("btnSave").disabled = !ok;
+    document.getElementById("btnSave").disabled = !ok || !reportPreview;
+    document.getElementById("btnCopy").disabled = !reportPreview;
     document.getElementById("btnDerivedPdf").disabled = !ok;
     document.getElementById("btnAppliedPdf").disabled = !ok || (visualAvailable && !appliedOriginal);
     document.getElementById("btnNativePdf").disabled = !ok || !visualAvailable || !nativeRedactionAvailable || !hasConfirmed;
@@ -685,17 +635,12 @@ function checkCompliance() {
 
 async function saveJSON(button) {
     try {
-        const envelope = buildEnvelope();
+        if (!reportPreview) return;
         const response = await apiFetch("/api/export", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                document_id: envelope.document_id,
-                findings: findings,
-                layers_active: layersActive,
-                layers_available: layersAvailable
-            })
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(reportPreview)
         });
+        if (response.status === 409) refreshReport();
         const data = await response.json();
         if (!response.ok || !data.success) throw new Error(data.error || "No se pudo guardar el informe.");
         const original = button.textContent;
@@ -728,105 +673,63 @@ function replacementFor(finding) {
 }
 
 function exportDerivedPDF() {
+    const draft = extractionNotes.length > 0;
+    if (draft && !confirm(extractionNotes.join("\n") + "\n\n¿Generar una transcripción parcial para revisión?")) return;
     Object.keys(pseudoMap).forEach(k => delete pseudoMap[k]);
     const confirmed = findings.filter(f => f.status === "confirmed").sort((a, b) => a.position.start - b.position.start);
     let html = "";
     let last = 0;
     confirmed.forEach(f => {
-        if (f.position.start > last) html += escapeHtml(documentText.slice(last, f.position.start));
+        if (f.position.start > last) html += escapeHtml(sliceText(last, f.position.start));
         html += `<span style="background:#000;color:#fff;padding:1px 6px;border-radius:2px;font-size:11px;font-weight:700;">${escapeHtml(replacementFor(f))}</span>`;
         last = f.position.end;
     });
-    if (last < documentText.length) html += escapeHtml(documentText.slice(last));
+    if (last < documentText.length) html += escapeHtml(sliceText(last));
     const win = window.open("", "_blank");
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Documento testado</title><style>body{font-family:Courier New,monospace;font-size:12px;line-height:1.8;max-width:820px;margin:40px auto;padding:20px;color:#000}.doc{white-space:pre-wrap;word-break:break-word}.hdr,.ftr{font-family:Arial,sans-serif;font-size:11px;color:#666}.hdr{border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px}.ftr{border-top:1px solid #ccc;padding-top:12px;margin-top:24px}@media print{.np{display:none}}</style></head><body><div class="hdr"><h2>DOCUMENTO TESTADO</h2><div>Velo v${APP_VERSION}</div><div>Copia derivada con sustituciones textuales</div></div><div class="doc">${html}</div><div class="ftr">El original no se ha modificado. Esta salida textual es una copia derivada.</div><div class="np" style="text-align:center;margin-top:24px;"><button id="printBtn" type="button" style="padding:10px 24px;border:0;border-radius:8px;background:#1c1917;color:#fff;cursor:pointer;">Imprimir / Guardar como PDF</button></div></body></html>`);
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Documento testado</title><style>body{font-family:Courier New,monospace;font-size:12px;line-height:1.8;max-width:820px;margin:40px auto;padding:20px;color:#000}.doc{white-space:pre-wrap;word-break:break-word}.hdr,.ftr{font-family:Arial,sans-serif;font-size:11px;color:#666}.hdr{border-bottom:2px solid #000;padding-bottom:12px;margin-bottom:24px}.ftr{border-top:1px solid #ccc;padding-top:12px;margin-top:24px}@media print{.np{display:none}}</style></head><body><div class="hdr"><h2>${draft ? "BORRADOR DE REVISIÓN" : "DOCUMENTO TESTADO"}</h2><div>Velo v${APP_VERSION}</div><div>Copia derivada con sustituciones textuales</div></div><div class="doc">${html}</div><div class="ftr">El original no se ha modificado. Esta salida textual es una copia derivada.</div><div class="np" style="text-align:center;margin-top:24px;"><button id="printBtn" type="button" style="padding:10px 24px;border:0;border-radius:8px;background:#1c1917;color:#fff;cursor:pointer;">Imprimir / Guardar como PDF</button></div></body></html>`);
     win.document.close();
     const printBtn = win.document.getElementById("printBtn");
     if (printBtn) printBtn.addEventListener("click", () => win.print());
 }
 
-async function downloadAppliedOriginal(button) {
+async function downloadReviewedPdf(button, mode) {
     if (!visualSession) return;
-    if (!appliedOriginal) {
-        alert("Primero hay que aplicar la edición sobre el original.");
-        return;
-    }
-    try {
-        const response = await apiFetch(`/api/session/${visualSession}/applied-original-pdf`);
-        if (!response.ok) {
-            let message = "No se pudo descargar el original editado.";
-            try {
-                const data = await response.json();
-                if (data.error) message = data.error;
-            } catch (_) { }
-            throw new Error(message);
-        }
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `DOC-${Date.now().toString(36).toUpperCase()}_original_editado.pdf`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        URL.revokeObjectURL(url);
-        const original = button.textContent;
-        button.textContent = "Descargado";
-        setTimeout(() => button.textContent = original, 1400);
-    } catch (err) {
-        alert("Error: " + err.message);
-    }
-}
-
-async function downloadNativeRedactedPdf(button) {
-    if (!visualSession || !nativeRedactionAvailable) return;
-    if (!findings.some(f => f.status === "confirmed")) {
-        alert("Confirme al menos un hallazgo antes de generar el expurgo nativo.");
-        return;
-    }
-
+    const session = visualSession;
+    const requestBody = {session_id: session, document_id: reviewId, findings, redaction_mode: "native"};
+    const revision = appliedOriginal?.revision;
+    const getCopy = draft => mode === "native"
+        ? apiFetch("/api/export/redacted-pdf", {method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({...requestBody, draft})})
+        : apiFetch(`/api/session/${session}/applied-original-pdf?revision=${encodeURIComponent(revision)}&draft=${draft ? 1 : 0}`);
     const original = button.textContent;
     button.disabled = true;
-    button.textContent = "Expurgando...";
+    button.textContent = "Preparando copia…";
     try {
-        const documentId = `DOC-${Date.now().toString(36).toUpperCase()}`;
-        const response = await apiFetch("/api/export/redacted-pdf", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-                session_id: visualSession,
-                document_id: documentId,
-                findings,
-                redaction_mode: "native"
-            })
-        });
-        if (!response.ok) {
-            let message = "No se pudo generar el PDF con expurgo nativo.";
-            try {
-                const data = await response.json();
-                if (data.error) message = data.error;
-            } catch (_) { }
-            throw new Error(message);
+        let response = await getCopy(false);
+        if (response.status === 409) {
+            const detail = await response.json();
+            if (!detail.draft_available) throw new Error(detail.error);
+            const issues = detail.issues || [];
+            const remaining = issues.length - 10;
+            const message = issues.slice(0, 10).join("\n") + (remaining > 0 ? `\nY ${remaining} incidencias más.` : "");
+            if (!confirm(message + "\n\nLa copia puede contener datos personales. ¿Descargar como BORRADOR de revisión?")) return;
+            response = await getCopy(true);
         }
-
-        const warning = projectionWarning(headerList(response, "X-Velo-Sin-Proyectar"), headerList(response, "X-Velo-Proyeccion-Parcial"));
-        const blob = await response.blob();
-        const url = URL.createObjectURL(blob);
+        if (!response.ok) throw new Error((await response.json()).error || "No se pudo preparar la copia.");
+        if (session !== visualSession) return;
+        const draft = response.headers.get("X-Velo-Estado") === "borrador";
+        const url = URL.createObjectURL(await response.blob());
         const link = document.createElement("a");
         link.href = url;
-        link.download = `${documentId}_native_redacted.pdf`;
+        link.download = `${draft ? "BORRADOR_" : ""}${reviewId}_${mode === "native" ? "testado" : "visual"}.pdf`;
         document.body.appendChild(link);
         link.click();
         link.remove();
-        URL.revokeObjectURL(url);
-        if (warning) alert("Atención: " + warning);
-        button.textContent = "Descargado";
-        setTimeout(() => button.textContent = original, 1400);
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (err) {
-        button.textContent = original;
-        alert("Error: " + err.message);
+        alert(err.message);
     } finally {
-        button.disabled = false;
+        button.textContent = original;
         checkCompliance();
     }
 }
@@ -835,6 +738,9 @@ async function resetAll() {
     await cleanupVisualSession();
     currentStep = 0;
     documentText = "";
+    textUnits = "";
+    reportPreview = null;
+    previewGeneration++;
     findings = [];
     layersActive = [];
     layersAvailable = [];
@@ -871,6 +777,15 @@ function shutdownServer() {
 
 document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("textInput").addEventListener("input", onTextChange);
+    let noteTimer;
+    document.getElementById("riskNote").addEventListener("input", () => {
+        previewGeneration++;
+        reportPreview = null;
+        document.getElementById("jsonOutput").textContent = "Actualizando valoración…";
+        checkCompliance();
+        clearTimeout(noteTimer);
+        noteTimer = setTimeout(() => { if (currentStep === 5) refreshReport(); }, 300);
+    });
     document.getElementById("fileInput").addEventListener("change", onFileSelected);
     const uploadArea = document.getElementById("uploadArea");
     uploadArea.addEventListener("dragover", event => { event.preventDefault(); uploadArea.style.borderColor = "var(--accent)"; });
@@ -895,7 +810,7 @@ document.addEventListener("DOMContentLoaded", () => {
             if (d.layers && d.layers.spacy && d.layers.spacy_model) label += " + NER";
             if (d.visual_redaction && d.visual_redaction.implemented) label += " + PDF";
             nativeRedactionAvailable = Boolean(d.visual_redaction && d.visual_redaction.modes && d.visual_redaction.modes.native);
-            if (nativeRedactionAvailable) label += " + EXPURGO";
+            if (nativeRedactionAvailable) label += " + TESTADO";
             document.getElementById("statusLabel").textContent = label;
         })
         .catch(() => { });
@@ -918,8 +833,8 @@ const CLICK_ACTIONS = {
     copyJSON: el => copyJSON(el),
     saveJSON: el => saveJSON(el),
     exportDerivedPDF: () => exportDerivedPDF(),
-    downloadAppliedOriginal: el => downloadAppliedOriginal(el),
-    downloadNativeRedactedPdf: el => downloadNativeRedactedPdf(el),
+    downloadAppliedOriginal: el => downloadReviewedPdf(el, "image"),
+    downloadNativeRedactedPdf: el => downloadReviewedPdf(el, "native"),
     resetAll: () => resetAll(),
     prevStep: () => prevStep(),
     nextStep: () => nextStep(),
@@ -930,6 +845,7 @@ const CLICK_ACTIONS = {
 };
 
 const CHANGE_ACTIONS = {
+    refreshReport: () => refreshReport(),
     checkCompliance: () => checkCompliance(),
     setTechnique: el => setTechnique(el.dataset.id, el.value),
 };

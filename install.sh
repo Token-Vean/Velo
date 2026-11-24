@@ -7,7 +7,7 @@ export PYTHONDONTWRITEBYTECODE=1
 
 echo
 echo "======================================================"
-echo " Velo - Detector de datos sensibles v0.5.0"
+echo " Velo - Detector de datos sensibles v0.6.0"
 echo "======================================================"
 echo
 
@@ -32,7 +32,7 @@ echo
 
 echo "Preparando entorno virtual local .venv ..."
 if [[ ! -x .venv/bin/python ]]; then
-  "$PYTHON_CMD" -m venv .venv
+  "$PYTHON_CMD" -m venv .venv || exit 1
 fi
 VENV_PY=".venv/bin/python"
 
@@ -61,37 +61,33 @@ echo "Intentando instalar dependencias visuales opcionales..."
 if "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements-visual.lock; then
   echo "[OK] Dependencias visuales instaladas"
 else
+  if "$VENV_PY" -c "import importlib.util as u; import sys; sys.exit(u.find_spec('pymupdf') is None and u.find_spec('fitz') is None)"; then
+    echo "[ERROR] La capa PDF instalada no pudo actualizarse. Repita la instalación."
+    exit 1
+  fi
   echo "[AVISO] No se pudieron instalar las dependencias visuales."
   echo "        Velo arrancará igualmente en modo base."
 fi
 
 echo
-if ! "$VENV_PY" -c "import spacy; spacy.load('es_core_news_md')" >/dev/null 2>&1; then
-  echo "------------------------------------------------------"
-  echo " DETECCIÓN DE NOMBRES Y APELLIDOS (opcional)"
-  echo "------------------------------------------------------"
-  echo
+INSTALL_NLP=S
+if ! "$VENV_PY" -m pip show spacy >/dev/null 2>&1; then
   read -r -p "¿Desea instalar la detección de nombres? [S/n]: " INSTALL_NLP
   INSTALL_NLP="${INSTALL_NLP:-S}"
-
-  # Sin ${VAR^^}: la bash 3.2 que trae macOS no lo admite.
-  if [[ "$INSTALL_NLP" == "S" || "$INSTALL_NLP" == "s" ]]; then
-    echo
-    echo "Instalando spaCy y el modelo es_core_news_md (verificados por hash)..."
-    if "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements-nlp.lock; then
-      echo "[OK] spaCy y modelo español instalados"
-    else
-      echo "[AVISO] No se pudo instalar spaCy o su modelo."
-      echo "        Velo arrancará igualmente en modo regex."
-    fi
-  else
-    echo "[--] Detección de nombres omitida."
-  fi
-else
-  echo "[OK] spaCy y modelo es_core_news_md ya instalados"
 fi
+if [[ "$INSTALL_NLP" == S || "$INSTALL_NLP" == s ]]; then
+  echo "Sincronizando spaCy y el modelo español con las versiones verificadas..."
+  if ! "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements-nlp.lock; then
+    if "$VENV_PY" -m pip show spacy >/dev/null 2>&1; then
+      echo "[ERROR] La capa lingüística instalada no pudo actualizarse. Repita la instalación."
+      exit 1
+    fi
+    echo "[AVISO] Detección de nombres no disponible."
+  fi
+fi
+"$VENV_PY" -m pip check || exit 1
+if [[ "${1:-}" == "--solo-instalar" ]]; then exit 0; fi
 
-echo
 echo "Velo solo escribe en esta carpeta y en su directorio de datos."
 echo "Para eliminarlo por completo: ./desinstalar.sh"
 echo

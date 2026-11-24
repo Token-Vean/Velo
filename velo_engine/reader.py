@@ -190,27 +190,20 @@ def docx_review_notes(filepath: str) -> list[str]:
         return []
 
     notes: list[str] = []
-    body = document.element.body
-    if body.find(f".//{{{_W_NS}}}del") is not None or body.find(f".//{{{_W_NS}}}ins") is not None:
-        notes.append(
-            "El DOCX contiene control de cambios. El texto eliminado con control de "
-            "cambios no se analiza, pero sigue dentro del fichero original: "
-            "acepte o rechace los cambios antes de difundirlo."
-        )
     parts = _docx_parts_by_kind(document)
+    names = {"header": "cabecera", "footer": "pie", "footnotes": "notas al pie",
+             "endnotes": "notas finales", "comments": "comentarios"}
+    sections = [("cuerpo", document.part)]
+    sections.extend((f"{names[kind]} {i}", part) for kind, items in parts.items()
+                    for i, part in enumerate(items, 1))
+    for label, part in sections:
+        root = _part_root(part)
+        if any(root.find(f".//{{{_W_NS}}}{tag}") is not None for tag in ("del", "ins", "moveFrom", "moveTo")):
+            notes.append(f"DOCX, {label}: hay control de cambios. Revise las revisiones y el texto eliminado en el original.")
+        if any(r.reltype.endswith("/image") for r in part.rels.values()):
+            notes.append(f"DOCX, {label}: contiene imágenes sin analizar. Revise firmas, sellos y documentos escaneados.")
     if parts["comments"]:
-        notes.append(
-            "El DOCX contiene comentarios. Se han analizado, pero conservan autor e "
-            "iniciales en el fichero original."
-        )
-    images = sum(
-        1 for rel in document.part.rels.values() if str(getattr(rel, "reltype", "")).endswith("/image")
-    )
-    if images:
-        notes.append(
-            f"El DOCX contiene {images} imagen(es). Velo no analiza el contenido de "
-            "imágenes incrustadas (firmas, sellos, documentos escaneados): revíselas visualmente."
-        )
+        notes.append("El DOCX contiene comentarios. Se ha analizado su texto; revise también autores e iniciales en el original.")
     return notes
 
 

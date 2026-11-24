@@ -114,6 +114,16 @@ jobs:
           done
           "$PY" -m pip check
 
+      - name: Actualizar una instalación existente con una dependencia lingüística anterior
+        run: |
+          echo "wasabi==1.1.2 --hash=sha256:0a3f933c4bf0ed3f93071132c1b87549733256d6c8de6473c5f7ed2e171b5cf9" > "$RUNNER_TEMP/velo-upgrade.txt"
+          "$PY" -m pip install --require-hashes --only-binary=:all: --no-deps -r "$RUNNER_TEMP/velo-upgrade.txt"
+          if [ "$RUNNER_OS" = Windows ]; then
+            cmd //c "install.bat --solo-instalar"
+          else
+            bash install.sh --solo-instalar
+          fi
+
       - name: Auditoría del entorno instalado
         run: '"$PY" tools/auditar_entorno.py'
 

@@ -238,3 +238,40 @@ def test_ruta_con_salto_de_linea_no_falsifica_el_log(client, caplog):
     assert respuesta.status_code == 403
     registros = [r.getMessage() for r in caplog.records if "same-origin" in r.getMessage()]
     assert registros and all("\n" not in m for m in registros)
+
+
+def test_informe_previsualizado_es_el_guardado(client, tmp_path):
+    payload = {
+        "document_id": "DOC-AULA", "analysis_date": "2026-11-24T09:00:00.000Z",
+        "source_format": "docx", "extraction_notes": ["Cabecera con imagen"],
+        "risk_reviewed": True, "risk_assessment_note": "Revisados cargo y fecha", "findings": [],
+    }
+    preview = _post_json(client, "/api/export", {**payload, "preview": True}).get_json()
+    path = tmp_path / "DOC-AULA_pii_report.json"
+    assert not path.exists()
+    result = _post_json(client, "/api/export", {**payload, "snapshot": preview["snapshot"]})
+    assert result.status_code == 200
+    assert path.read_text(encoding="utf-8") == preview["report_text"]
+    envelope = result.get_json()["envelope"]
+    assert envelope == json.loads(preview["report_text"])
+    assert envelope["audit"]["residual_risk_note"] == "Revisados cargo y fecha"
+    assert envelope["audit"]["residual_risk_reviewed"]
+    assert envelope["extraction_notes"] == ["Cabecera con imagen"]
+    changed = _post_json(client, "/api/export", {**payload, "risk_reviewed": False, "snapshot": preview["snapshot"]})
+    assert changed.status_code == 409
+    assert path.read_text(encoding="utf-8") == preview["report_text"]
+
+
+def test_imagen_en_cabecera_word(tmp_path):
+    from PIL import Image
+    from velo_engine.reader import docx_review_notes
+
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 16), "blue").save(buffer, "PNG")
+    buffer.seek(0)
+    doc = docx.Document()
+    doc.add_paragraph("Solicitud de prueba")
+    doc.sections[0].header.paragraphs[0].add_run().add_picture(buffer)
+    path = tmp_path / "solicitud.docx"
+    doc.save(path)
+    assert any("cabecera" in note and "imágenes" in note for note in docx_review_notes(str(path)))
