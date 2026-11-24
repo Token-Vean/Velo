@@ -85,6 +85,7 @@ def main() -> int:
     escuchas_externas: list[str] = []
     unix: set[str] = set()
     fuera: dict[str, str] = {}
+    cargados: set[str] = set()
     ilegibles: list[str] = []
     escrituras_evaluadas = 0
     temporales_creados: set[str] = set()
@@ -123,6 +124,13 @@ def main() -> int:
                 destino = re.search(r'sun_path="([^"]*)"', argumentos)
                 unix.add(destino[1] if destino else "(abstracto)")
             continue
+
+        if llamada in ("open", "openat", "openat2"):
+            leido = re.search(r'"[^"]*/site-packages/([^/"]+)', argumentos)
+            if leido and RESULTADO_OK.search(argumentos):
+                paquete = leido[1]
+                if not paquete.endswith((".dist-info", ".pth")) and paquete != "__pycache__":
+                    cargados.add(paquete.removesuffix(".py").split(".")[0])
 
         es_escritura = (
             llamada in ("open", "openat", "openat2", "creat") and (ESCRITURA.search(argumentos) or llamada == "creat")
@@ -181,6 +189,10 @@ def main() -> int:
     for ruta in restos[:50]:
         print(f"  [X] resto: {ruta}")
     fallos += len(restos)
+
+    if cargados:
+        print(f"Paquetes de site-packages que el proceso llegó a abrir ({len(cargados)}, informativo):")
+        print("  " + ", ".join(sorted(cargados)))
 
     if fallos:
         print(f"[ERROR] {fallos} incidencia(s)")
