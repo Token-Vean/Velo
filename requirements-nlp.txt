@@ -1,2 +1,10 @@
 # Velo - Dependencias NLP opcionales
-spacy>=3.7,<4.0
+# 3.8.18: exige weasel>=1.0.1 y confection>=1.3.4 y corrige una fuga de memoria
+# al añadir morfologías existentes.
+spacy>=3.8.18,<4.0
+# Modelo español. Se instala como paquete desde la publicación oficial de
+# Explosion para que su hash quede fijado en locks/requirements-nlp.lock y se
+# compruebe al instalar (antes se descargaba con `spacy download`, sin
+# verificar). El hash se contrasta además con fuentes independientes en CI
+# (tools/verificar_modelo_spacy.py).
+es_core_news_md @ https://github.com/explosion/spacy-models/releases/download/es_core_news_md-3.8.0/es_core_news_md-3.8.0-py3-none-any.whl

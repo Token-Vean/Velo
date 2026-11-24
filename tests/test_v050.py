@@ -89,7 +89,7 @@ def test_prune_export_reports(tmp_path):
 # Regresiones de PDF: límite de páginas y expurgo nativo
 # ---------------------------------------------------------------------------
 
-fitz = pytest.importorskip("fitz")
+fitz = pytest.importorskip("pymupdf")
 
 from velo_engine import visual as visual_module  # noqa: E402
 

@@ -101,13 +101,27 @@ chmod +x install.sh
 
 ## Manual Installation
 
+Installation is **hash-verified**: every package (including pip and the
+Spanish spaCy model) is pinned to an exact version and SHA-256 in `locks/`, and
+pip refuses any file that does not match. No source distributions are built.
+
 ```bash
-python -m pip install -r requirements.txt
-python -m pip install -r requirements-visual.txt  # optional: visual PDF review
-python -m pip install -r requirements-nlp.txt     # optional: name detection
-python -m spacy download es_core_news_md          # optional: Spanish NER model
+python -m pip install --require-hashes --only-binary=:all: -r locks/pip.lock
+python -m pip install --require-hashes --only-binary=:all: -r locks/requirements.lock
+python -m pip install --require-hashes --only-binary=:all: -r locks/requirements-visual.lock  # optional: visual PDF review
+python -m pip install --require-hashes --only-binary=:all: -r locks/requirements-nlp.lock     # optional: names (spaCy + model)
 python run.py
 ```
+
+## What it touches and how to remove it
+
+Velo only writes to its own folder and its data directory (Windows:
+`%LOCALAPPDATA%\Velo`; macOS: `~/Library/Application Support/Velo`; Linux:
+`~/.local/state/velo`) and makes no network connections while running. To
+remove it: shut it down, run `desinstalar.bat` or `./desinstalar.sh`, then
+delete the folder. What CI verifies on every change (network and file-system
+tracing, environment audit, provenance, model review) is described in
+[docs/INSTALACION_SEGURA.md](docs/INSTALACION_SEGURA.md) (Spanish).
 
 ## Repository Structure
 

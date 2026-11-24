@@ -55,6 +55,28 @@ chmod +x install.sh
 
 Los instaladores crean un entorno virtual local `.venv` dentro de la carpeta del proyecto para aislar dependencias y reducir conflictos con el sistema.
 
+La instalación es **verificada**: cada paquete (incluidos pip y el modelo español de spaCy) se instala con la versión exacta y el SHA-256 fijados en `locks/`, y pip rechaza cualquier fichero que no coincida. No se compilan paquetes fuente. Si pip informa de un hash que no coincide, no lo fuerce: avise en el repositorio.
+
+Instalación manual equivalente:
+
+```bash
+python -m venv .venv && . .venv/bin/activate        # Windows: .venv\Scripts\activate
+python -m pip install --require-hashes --only-binary=:all: -r locks/pip.lock
+python -m pip install --require-hashes --only-binary=:all: -r locks/requirements.lock
+python -m pip install --require-hashes --only-binary=:all: -r locks/requirements-visual.lock  # opcional: revisión visual PDF
+python -m pip install --require-hashes --only-binary=:all: -r locks/requirements-nlp.lock     # opcional: nombres (spaCy + modelo)
+python run.py
+```
+
+### Qué toca en tu equipo y cómo eliminarlo
+
+Velo solo escribe en su carpeta y en su directorio de datos (Windows:
+`%LOCALAPPDATA%\Velo`; macOS: `~/Library/Application Support/Velo`; Linux:
+`~/.local/state/velo`), y no se conecta a internet mientras funciona. Para
+eliminarlo: apágalo, ejecuta `desinstalar.bat` o `./desinstalar.sh` y borra la
+carpeta. Qué se comprueba en cada versión y con qué límites:
+[docs/INSTALACION_SEGURA.md](docs/INSTALACION_SEGURA.md).
+
 ## Distribución simplificada para usuarios no expertos
 
 No es recomendable deformar la raíz del repositorio fuente para ocultar archivos de desarrollo. En cambio, sí es recomendable generar un **paquete distribuible** distinto, con esta estructura:
@@ -71,6 +93,7 @@ Velo/
    ├─ requirements.txt
    ├─ requirements-visual.txt
    ├─ requirements-nlp.txt
+   ├─ locks/
    └─ velo_engine/
 ```
 

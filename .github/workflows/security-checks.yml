@@ -42,15 +42,23 @@ jobs:
 
       - name: Install dependencies and audit tools
         run: |
-          # setuptools 79.0.1 está afectado por PYSEC-2026-3447.
-          # Se fija el mínimo corregido antes de auditar el entorno completo.
-          python -m pip install --upgrade pip "setuptools>=83.0.0" wheel
-          python -m pip install -r requirements.txt
-          if [ -f requirements-visual.txt ]; then python -m pip install -r requirements-visual.txt; fi
+          # Mismo procedimiento que los instaladores: versiones y SHA-256
+          # fijados en locks/, sin compilar paquetes fuente.
+          VERIFICADO="--require-hashes --only-binary=:all:"
+          python -m pip install $VERIFICADO -r locks/pip.lock
+          python -m pip install $VERIFICADO -r locks/requirements.lock
+          python -m pip install $VERIFICADO -r locks/requirements-visual.lock
+          # setuptools 79.0.1 está afectado por PYSEC-2026-3447: el entorno
+          # resuelto que audita pip-audit no debe arrastrar versiones viejas.
+          python -m pip install "setuptools>=83.0.0" wheel
+          # Herramientas de CI (no forman parte de la instalación de Velo).
           # ruff fijado: desde 0.16 activa reglas nuevas por defecto (UP, RUF100…)
           # y la versión sin fijar empezó a fallar sobre código sin cambios,
           # saltándose los pasos de pip-audit posteriores. Subirlo a propósito.
           python -m pip install bandit pip-audit pytest "ruff==0.15.22"
+
+      - name: Locks coherentes con requirements*.txt
+        run: python -I tools/comprobar_locks.py
 
       - name: Compile check
         run: python -m compileall .
@@ -71,29 +79,27 @@ jobs:
           bandit -r velo_engine run.py \
             -x .venv,build,dist,workspace,tests
 
-      - name: Pip audit base
-        run: pip-audit -r requirements.txt
+      - name: Pip audit base (lock)
+        run: pip-audit --require-hashes --disable-pip --no-deps -r locks/requirements.lock
 
       - name: Pip audit entorno resuelto
-        # Audita también las dependencias transitivas realmente instaladas
-        # (lxml, certifi, etc.), que -r sobre los requirements no cubre.
+        # Audita también lo realmente instalado (incluidas transitivas y pip).
         run: pip-audit --skip-editable
 
-      - name: Pip audit visual
-        run: |
-          if [ -f requirements-visual.txt ]; then
-            pip-audit -r requirements-visual.txt
-          else
-            echo "requirements-visual.txt no encontrado, se omite."
-          fi
+      - name: Pip audit visual (lock)
+        run: pip-audit --require-hashes --disable-pip --no-deps -r locks/requirements-visual.lock
 
-      - name: Pip audit NLP
+      - name: Pip audit NLP (lock)
+        # El modelo es_core_news_md no está en PyPI (no hay avisos que
+        # consultar): se audita el resto del lock.
         run: |
-          if [ -f requirements-nlp.txt ]; then
-            pip-audit -r requirements-nlp.txt
-          else
-            echo "requirements-nlp.txt no encontrado, se omite."
-          fi
+          python - <<'PY'
+          import re
+          texto = open("locks/requirements-nlp.lock", encoding="utf-8").read()
+          texto = re.sub(r"(?m)^es-core-news-md @ .*(?:\n[ \t].*)*", "", texto)
+          open("nlp-sin-modelo.lock", "w", encoding="utf-8").write(texto)
+          PY
+          pip-audit --require-hashes --disable-pip --no-deps -r nlp-sin-modelo.lock
 
       - name: Install Gitleaks CLI
         run: |

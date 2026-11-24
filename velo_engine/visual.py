@@ -42,6 +42,12 @@ except ImportError as exc:
 MAX_PDF_PAGES_VISUAL = 500
 
 TEXT_RENDER_SCALE = 2.0
+# Tope de píxeles por página renderizada. Un PDF puede declarar páginas de
+# hasta 14 400 x 14 400 pt: a escala 2 serían ~830 Mpx (~2,5 GB de RAM por
+# página) y Pillow rechazaría después la imagen como bomba de descompresión.
+# La escala se reduce por página para no superar este tope (A4 a escala 2
+# son ~2 Mpx, muy por debajo).
+MAX_RENDER_PIXELS = 20_000_000
 SESSION_METADATA = "visual.json"
 APPLIED_METADATA = "applied_original.json"
 APPLIED_PDF_NAME = "original_redacted.pdf"
@@ -55,7 +61,7 @@ def visual_capabilities() -> dict:
         "tesseract_ready": False,
     }
     try:
-        import fitz  # noqa: F401
+        import pymupdf  # noqa: F401
         caps["fitz"] = True
     except Exception as exc:  # noqa: BLE001
         logger.debug("PyMuPDF no disponible para revisión visual: %s", exc, exc_info=True)
@@ -93,8 +99,16 @@ def _ensure_dirs(session_dir: str) -> str:
     return assets_dir
 
 
+def _scale_for_page(page, preferred: float = TEXT_RENDER_SCALE) -> float:
+    """Escala de render que respeta MAX_RENDER_PIXELS para esta página."""
+    rect = page.rect
+    area = max(float(rect.width) * float(rect.height), 1.0)
+    limit = (MAX_RENDER_PIXELS / area) ** 0.5
+    return max(min(preferred, limit), 0.01)
+
+
 def _render_page_image(page, image_path: str, scale: float = TEXT_RENDER_SCALE) -> Tuple[int, int]:
-    import fitz
+    import pymupdf as fitz
 
     pix = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
     pix.save(image_path)
@@ -216,13 +230,13 @@ def _words_from_ocr(image_path: str) -> List[dict]:
 
     from velo_engine.constants import OCR_TIMEOUT_SECONDS
 
-    image = Image.open(image_path)
     try:
-        data = pytesseract.image_to_data(
-            image,
-            output_type=Output.DICT,
-            timeout=OCR_TIMEOUT_SECONDS,
-        )
+        with Image.open(image_path) as image:
+            data = pytesseract.image_to_data(
+                image,
+                output_type=Output.DICT,
+                timeout=OCR_TIMEOUT_SECONDS,
+            )
     except RuntimeError as exc:
         # pytesseract lanza RuntimeError al agotarse el timeout. La página
         # se trata como sin texto en lugar de bloquear un hilo del servidor
@@ -314,9 +328,11 @@ def _map_words_to_canonical(
                 continue
 
         if pos == -1:
+            # Solo la longitud: el texto de la palabra es contenido del
+            # documento y el log persiste en disco (nivel DEBUG en fichero).
             logger.debug(
-                "Pag %d: palabra no mapeada: %r (scan_pos=%d/%d)",
-                page_number, w_text[:30], scan_pos, len(canonical_text),
+                "Pag %d: palabra no mapeada (%d caracteres, scan_pos=%d/%d)",
+                page_number, len(w_text), scan_pos, len(canonical_text),
             )
             continue
 
@@ -391,7 +407,7 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
         logger.warning("Revision visual no disponible: falta PyMuPDF (fitz)")
         return None, "pdf", "La revision visual de PDF requiere PyMuPDF (fitz).", None
 
-    import fitz
+    import pymupdf as fitz
 
     file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
     logger.info("Procesando PDF: %.1f MB, sesion=%s", file_size_mb, session_id)
@@ -419,9 +435,15 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
         page = document.load_page(page_index)
         image_name = f"page_{page_index + 1:03d}.png"
         image_path = os.path.join(assets_dir, image_name)
-        width, height = _render_page_image(page, image_path, TEXT_RENDER_SCALE)
+        scale = _scale_for_page(page)
+        if scale < TEXT_RENDER_SCALE:
+            logger.warning(
+                "Pagina %d de tamano inusual: escala de render reducida a %.3f (sesion=%s)",
+                page_index + 1, scale, session_id,
+            )
+        width, height = _render_page_image(page, image_path, scale)
 
-        page_words_raw = _words_from_text_layer(page, TEXT_RENDER_SCALE)
+        page_words_raw = _words_from_text_layer(page, scale)
         source = "text_layer"
 
         page_text_start = global_offset
@@ -500,6 +522,7 @@ def read_pdf_for_visual_review(filepath: str, session_dir: str, session_id: str)
                 "image_name": image_name,
                 "width": width,
                 "height": height,
+                "scale": scale,
                 "text_start": page_text_start,
                 "text_end": global_offset,
                 "source": source,
@@ -589,7 +612,44 @@ def _rectangles_for_page(page_meta: dict, confirmed_findings: List[dict]) -> Lis
 
 
 def _confirmed_findings(findings: List[dict]) -> List[dict]:
-    return [item for item in findings if item.get("status") == "confirmed"]
+    return [item for item in findings if isinstance(item, dict) and item.get("status") == "confirmed"]
+
+
+def projection_report(pages_meta: List[dict], confirmed_findings: List[dict]) -> dict:
+    """Comprueba qué hallazgos confirmados tienen coordenadas en el PDF.
+
+    Un hallazgo confirmado cuyo texto no se pudo alinear con ninguna palabra
+    con bbox (palabras sin mapear, OCR deficiente, páginas sin texto) NO se
+    tacha en la copia derivada. Antes ocurría en silencio; ahora se informa
+    para que el archivero revise esas páginas o aplique otra técnica.
+    """
+    covered: Dict[str, int] = defaultdict(int)
+    for page_meta in pages_meta:
+        for word in page_meta.get("words", []):
+            for finding in confirmed_findings:
+                start = finding.get("position", {}).get("start")
+                end = finding.get("position", {}).get("end")
+                if start is None or end is None or end <= word["start"] or start >= word["end"]:
+                    continue
+                covered[finding.get("id")] += min(end, word["end"]) - max(start, word["start"])
+
+    unprojected: List[str] = []
+    partial: List[str] = []
+    for finding in confirmed_findings:
+        fid = finding.get("id")
+        start = finding.get("position", {}).get("start")
+        end = finding.get("position", {}).get("end")
+        if start is None or end is None:
+            unprojected.append(fid)
+            continue
+        text = finding.get("text")
+        expected = len(re.sub(r"\s", "", text)) if isinstance(text, str) and text else (end - start)
+        got = covered.get(fid, 0)
+        if got <= 0:
+            unprojected.append(fid)
+        elif expected and got < 0.9 * expected:
+            partial.append(fid)
+    return {"unprojected": unprojected, "partial": partial}
 
 
 def _signature_for_findings(findings: List[dict]) -> str:
@@ -609,7 +669,7 @@ def _signature_for_findings(findings: List[dict]) -> str:
 
 def _build_pdf_from_images(image_paths: List[str], output_path: str) -> None:
     """Compone el PDF final con PyMuPDF a partir de PNGs ya redactados."""
-    import fitz
+    import pymupdf as fitz
     from PIL import Image
 
     if not image_paths:
@@ -684,6 +744,7 @@ def apply_redactions_to_original(session_dir: str, session_id: str, findings: Li
         "total_rectangles": total_rectangles,
         "findings_signature": _signature_for_findings(findings),
         "based_on_original_pdf_images": True,
+        "projection": projection_report(metadata.get("pages", []), confirmed),
     }
     with open(os.path.join(session_dir, APPLIED_METADATA), "w", encoding="utf-8") as handle:
         json.dump(applied, handle, ensure_ascii=False, indent=2)
@@ -703,6 +764,68 @@ def export_visual_redacted_pdf(session_dir: str, findings: List[dict], output_pa
 # Expurgo nativo (v0.5.0)
 # ---------------------------------------------------------------------------
 
+def _sanitize_derived_pdf(document) -> dict:
+    """Elimina de la copia derivada todo lo que no es contenido de página.
+
+    ``apply_redactions`` solo actúa sobre el contenido bajo los rectángulos.
+    Fuera de él, un PDF puede llevar datos personales en: metadatos (Info y
+    XMP), anotaciones y comentarios (texto, autor, respuestas), valores de
+    formularios, ficheros adjuntos o incrustados, marcadores/índice,
+    JavaScript, enlaces y miniaturas. El modo imagen no tiene este problema
+    porque rasteriza cada página; el nativo sí lo tenía.
+    """
+    report = {"annotations_removed": 0, "outline_removed": False, "scrubbed": False}
+
+    for page in document:
+        # Se vuelve a pedir la primera anotación tras cada borrado: el objeto
+        # que devuelve delete_annot() no siempre queda ligado a la página.
+        for _ in range(100_000):
+            annot = page.first_annot
+            if annot is None:
+                break
+            page.delete_annot(annot)
+            report["annotations_removed"] += 1
+
+    try:
+        if document.get_toc():
+            document.set_toc([])
+            report["outline_removed"] = True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("No se pudo eliminar el índice del PDF derivado: %s", type(exc).__name__)
+
+    try:
+        document.scrub(
+            attached_files=True,
+            clean_pages=False,      # no reescribir contenidos ya expurgados
+            embedded_files=True,
+            hidden_text=False,      # conservar la capa OCR invisible ya analizada
+            javascript=True,
+            metadata=True,
+            redactions=True,
+            redact_images=0,
+            remove_links=True,
+            reset_fields=True,
+            reset_responses=True,
+            thumbnails=True,
+            xml_metadata=True,
+        )
+        report["scrubbed"] = True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("scrub() no disponible o fallido (%s); saneado parcial", type(exc).__name__)
+        document.set_metadata({})
+        try:
+            document.del_xml_metadata()
+        except Exception as inner:  # noqa: BLE001
+            logger.debug("No se pudo eliminar metadatos XMP: %s", inner, exc_info=True)
+        try:
+            for name in list(document.embfile_names()):
+                document.embfile_del(name)
+        except Exception as inner:  # noqa: BLE001
+            logger.debug("No se pudieron eliminar adjuntos: %s", inner, exc_info=True)
+
+    return report
+
+
 def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_path: str) -> dict:
     """Expurgo real sobre una copia del PDF original.
 
@@ -720,7 +843,7 @@ def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_pa
 
     Devuelve un dict con estadísticas de la operación.
     """
-    import fitz
+    import pymupdf as fitz
 
     metadata = load_session_metadata(session_dir)
     confirmed = _confirmed_findings(findings)
@@ -748,12 +871,13 @@ def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_pa
                 continue
 
             page = document.load_page(page_index)
+            scale = float(page_meta.get("scale") or TEXT_RENDER_SCALE)
             for rect in rectangles:
                 pdf_rect = fitz.Rect(
-                    rect[0] / TEXT_RENDER_SCALE,
-                    rect[1] / TEXT_RENDER_SCALE,
-                    rect[2] / TEXT_RENDER_SCALE,
-                    rect[3] / TEXT_RENDER_SCALE,
+                    rect[0] / scale,
+                    rect[1] / scale,
+                    rect[2] / scale,
+                    rect[3] / scale,
                 )
                 page.add_redact_annot(pdf_rect, fill=(0, 0, 0))
                 total_rectangles += 1
@@ -768,14 +892,7 @@ def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_pa
                 "Ningún hallazgo confirmado pudo proyectarse sobre el PDF original."
             )
 
-        # Higiene de la copia derivada: se elimina la metainformación del
-        # original (autor, software, XMP), que puede contener datos personales.
-        document.set_metadata({})
-        try:
-            document.del_xml_metadata()
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("No se pudo eliminar metadatos XMP: %s", exc, exc_info=True)
-
+        sanitized = _sanitize_derived_pdf(document)
         document.save(output_path, garbage=4, deflate=True)
     finally:
         document.close()
@@ -787,6 +904,8 @@ def export_native_redacted_pdf(session_dir: str, findings: List[dict], output_pa
         "findings_signature": _signature_for_findings(findings),
         "text_removed": True,
         "metadata_stripped": True,
+        "sanitized": sanitized,
+        "projection": projection_report(metadata.get("pages", []), confirmed),
     }
     logger.info(
         "Expurgo nativo aplicado: %d rectángulos en %d páginas -> %s",

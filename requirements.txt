@@ -2,8 +2,17 @@
 Flask==3.1.3
 waitress==3.0.2
 python-docx==1.2.0
-# pypdf >= 6.13.1 corrige CVE-2026-48735, CVE-2026-49460, CVE-2026-49461,
-# CVE-2026-54530, CVE-2026-54531 y CVE-2026-54651 (DoS con PDF manipulados).
-# pypdf 6.21.4 incorpora además las correcciones publicadas en noviembre de 2026
-# para nuevas variantes de DoS en PDF malformados.
-pypdf==6.21.4
+# pypdf 7.0.0/7.0.1 incorporan correcciones de seguridad sin CVE asignado
+# (límites de tamaño de imagen más estrictos, offsets no crecientes en object
+# streams, límite de trabajo en formularios XFA, tamaño de búfer de imagen por
+# bytes reales por píxel). Velo solo usa PdfReader/extract_text (motor fallback).
+pypdf==7.1.0
+
+# Dependencias transitivas con mínimos de seguridad. No se fijan a una versión
+# exacta para que pip resuelva la última corregida, pero nunca por debajo de:
+#   Werkzeug >= 3.1.6  CVE-2026-21860 y CVE-2026-27199 (safe_join en Windows)
+#   Jinja2   >= 3.1.6  CVE-2025-27516 (sandbox |attr)
+#   lxml     >= 6.1.0  CVE-2026-41066 (XXE en iterparse/ETCompatXMLParser)
+Werkzeug>=3.1.6
+Jinja2>=3.1.6
+lxml>=6.1.0
