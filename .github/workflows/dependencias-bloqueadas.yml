@@ -21,6 +21,11 @@ on:
       - "tools/comprobar_locks.py"
       - "tools/verificar_modelo_spacy.py"
       - ".github/workflows/dependencias-bloqueadas.yml"
+      # La matriz ejecuta las pruebas en Windows y macOS: también se lanza
+      # cuando cambia el código o las pruebas.
+      - "velo_engine/**"
+      - "tests/**"
+      - "run.py"
   pull_request:
     paths:
       - "requirements*.txt"
@@ -31,6 +36,11 @@ on:
       - "tools/comprobar_locks.py"
       - "tools/verificar_modelo_spacy.py"
       - ".github/workflows/dependencias-bloqueadas.yml"
+      # La matriz ejecuta las pruebas en Windows y macOS: también se lanza
+      # cuando cambia el código o las pruebas.
+      - "velo_engine/**"
+      - "tests/**"
+      - "run.py"
   schedule:
     # Semanal: detecta si una publicación fijada desaparece o cambia.
     - cron: "17 5 * * 1"
