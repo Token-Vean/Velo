@@ -1,0 +1,88 @@
+name: dependencias-bloqueadas
+
+# Genera y verifica los locks con hashes de locks/.
+#  - En cada push o PR que toque dependencias: regenera los locks en limpio y
+#    los publica como artefacto (para revisarlos o subirlos).
+#  - Lanzado a mano con «regenerar = true» sobre una rama (p. ej. un PR de
+#    Dependabot): además hace commit de los locks regenerados en esa rama.
+
+on:
+  push:
+    paths:
+      - "requirements*.txt"
+      - "locks/**"
+      - "tools/generar_locks.sh"
+      - "tools/verificar_modelo_spacy.py"
+      - ".github/workflows/dependencias-bloqueadas.yml"
+  pull_request:
+    paths:
+      - "requirements*.txt"
+      - "locks/**"
+      - "tools/generar_locks.sh"
+      - "tools/verificar_modelo_spacy.py"
+      - ".github/workflows/dependencias-bloqueadas.yml"
+  workflow_dispatch:
+    inputs:
+      regenerar:
+        description: "Hacer commit de los locks regenerados en esta rama"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependencias-bloqueadas-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar uv
+        run: |
+          python -m pip install uv
+          uv --version
+
+      - name: Generar locks
+        run: bash tools/generar_locks.sh
+
+      - name: Contrastar el hash del modelo spaCy
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -I tools/verificar_modelo_spacy.py
+
+      - name: Diferencias con los locks del repositorio
+        run: git status --short locks/ && git diff --stat -- locks/ || true
+
+      - name: Publicar locks como artefacto
+        uses: actions/upload-artifact@v4
+        with:
+          name: locks-generados
+          path: locks/
+          retention-days: 14
+
+      - name: Commit de los locks regenerados
+        if: github.event_name == 'workflow_dispatch' && inputs.regenerar
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add locks/
+          if git diff --cached --quiet; then
+            echo "Los locks ya estaban al día."
+          else
+            git commit -m "Regenerar locks con hashes"
+            git push
+            echo "::notice::Locks actualizados. Relance security-checks sobre esta rama."
+          fi
