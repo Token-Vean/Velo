@@ -25,16 +25,11 @@ jobs:
         run: |
           gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts?state=open&per_page=100" \
             --jq '.[] | [.number, .rule.id, .rule.security_severity_level // .rule.severity, .most_recent_instance.ref, .most_recent_instance.commit_sha[0:9], .most_recent_instance.location.path, (.most_recent_instance.location.start_line|tostring), .created_at] | @tsv'
-      - name: pip-audit de las dependencias de main y de los locks de la rama
+      - name: Alertas del análisis del PR 24
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          python -m pip install --disable-pip-version-check -q pip-audit
-          git fetch -q origin main
-          for f in requirements.txt requirements-visual.txt requirements-nlp.txt; do
-            git show origin/main:$f > main-$f
-            echo "===== main: $f"
-            pip-audit -r main-$f --desc on 2>&1 | tail -30 || true
-          done
-          for l in requirements requirements-visual; do
-            echo "===== rama: locks/$l.lock"
-            pip-audit --require-hashes --disable-pip --no-deps -r locks/$l.lock --desc on 2>&1 | tail -20 || true
-          done
+          gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts?ref=refs/pull/24/merge&state=open&per_page=100" \
+            --jq '.[] | [.number, .rule.id, .rule.security_severity_level // .rule.severity, .most_recent_instance.location.path, (.most_recent_instance.location.start_line|tostring), .most_recent_instance.message.text] | @tsv'
+          echo "===== alertas de main que el PR cierra o mantiene"
+          gh api "repos/$GITHUB_REPOSITORY/code-scanning/analyses?ref=refs/pull/24/merge&per_page=5" --jq '.[] | [.tool.name, .category, .results_count, .created_at] | @tsv'
