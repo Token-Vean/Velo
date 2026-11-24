@@ -1,0 +1,23 @@
+name: temporal-consulta-alertas
+# Temporal: lista las alertas de seguridad del repositorio en el log. Se borra
+# después de usarlo.
+on:
+  push:
+    paths:
+      - ".github/workflows/temporal-consulta-alertas.yml"
+permissions:
+  contents: read
+  security-events: read
+  actions: read
+jobs:
+  alertas:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Alertas
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for ep in "code-scanning/alerts?state=open&per_page=100" "code-scanning/analyses?per_page=5" "dependabot/alerts?state=open&per_page=100" "secret-scanning/alerts?state=open&per_page=100"; do
+            echo "===== $ep"
+            gh api "repos/$GITHUB_REPOSITORY/$ep" --jq '.[] | [(.number // .id // ""), (.state // ""), (.rule.id // .security_advisory.ghsa_id // .secret_type // .tool.name // ""), (.rule.severity // .security_advisory.severity // ""), (.most_recent_instance.ref // .dependency.manifest_path // .ref // ""), (.most_recent_instance.location.path // .dependency.package.name // ""), ((.most_recent_instance.location.start_line // "")|tostring), (.rule.description // .security_advisory.summary // .created_at // "")] | @tsv' 2>&1 || true
+          done

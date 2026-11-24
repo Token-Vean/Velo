@@ -22,6 +22,7 @@ import argparse
 import json
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
@@ -32,15 +33,23 @@ ESPERADA = RAIZ / "locks" / "procedencia.json"
 AGENTE = {"User-Agent": "velo-verificacion-procedencia"}
 
 
-def _get_json(url: str, aceptar: str = "application/json"):
+def _get_json(url: str, aceptar: str = "application/json", intentos: int = 5):
+    """GET con reintentos: son ~1600 consultas y PyPI corta alguna de vez en cuando."""
     peticion = urllib.request.Request(url, headers={**AGENTE, "Accept": aceptar})
-    try:
-        with urllib.request.urlopen(peticion, timeout=60) as respuesta:  # noqa: S310 (URL fija https)
-            return json.loads(respuesta.read())
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return None
-        raise
+    for intento in range(intentos):
+        try:
+            with urllib.request.urlopen(peticion, timeout=60) as respuesta:  # noqa: S310 (URL fija https)
+                return json.loads(respuesta.read())
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return None
+            if exc.code < 500 and exc.code != 429 or intento == intentos - 1:
+                raise
+        except (urllib.error.URLError, ConnectionError, TimeoutError):
+            if intento == intentos - 1:
+                raise
+        time.sleep(2 ** intento)
+    return None
 
 
 def _entradas_locks() -> dict[tuple[str, str], set[str]]:
