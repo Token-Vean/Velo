@@ -60,7 +60,9 @@ def main() -> int:
         return 1
 
     fallos: list[str] = []
-    sitios = [Path(p).resolve() for p in site.getsitepackages()]
+    # En Windows getsitepackages() incluye también la raíz del entorno
+    # (con Scripts/python.exe): solo interesan las carpetas site-packages.
+    sitios = [Path(p).resolve() for p in site.getsitepackages() if Path(p).name.lower() == "site-packages"]
     print(f"Entorno: {sys.prefix}\nsite-packages: {[str(s) for s in sitios]}")
 
     distribuciones = list(metadata.distributions(path=[str(s) for s in sitios]))

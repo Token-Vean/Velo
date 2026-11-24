@@ -89,6 +89,7 @@ jobs:
     env:
       PYTHONPATH: ${{ github.workspace }}
       BROWSER: "true"
+      PYTHONDONTWRITEBYTECODE: "1"
     defaults:
       run:
         shell: bash

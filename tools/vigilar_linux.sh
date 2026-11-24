@@ -22,6 +22,7 @@ mkdir -p "$TRAZAS"
 STRACE=(strace -f -y -qq -s 512 -e trace=%network,%file)
 FLAGS=(--require-hashes --only-binary=:all: --disable-pip-version-check --no-cache-dir)
 export BROWSER=true   # no abrir navegador en CI
+export PYTHONDONTWRITEBYTECODE=1   # como los instaladores
 
 if [[ -e .venv || -e "$DATOS" ]]; then
   echo "[ERROR] Ya existe .venv o $DATOS: la vigilancia debe partir de cero."

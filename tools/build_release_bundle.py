@@ -14,6 +14,8 @@ INCLUDE = [
     "run.py",
     "install.bat",
     "install.sh",
+    "desinstalar.bat",
+    "desinstalar.sh",
     "requirements.txt",
     "requirements-visual.txt",
     "requirements-nlp.txt",
@@ -41,11 +43,16 @@ def write_wrappers() -> None:
         encoding="utf-8",
     )
     (OUT / "INICIAR_VELO.bat").write_text(
-        '@echo off\ncd /d "%~dp0app"\nif exist ".venv\\Scripts\\python.exe" (\n  .venv\\Scripts\\python.exe run.py\n) else (\n  echo Ejecute primero INSTALAR_VELO.bat\n  pause\n)\n',
+        '@echo off\ncd /d "%~dp0app"\nset "PYTHONDONTWRITEBYTECODE=1"\nif exist ".venv\\Scripts\\python.exe" (\n  .venv\\Scripts\\python.exe run.py\n) else (\n  echo Ejecute primero INSTALAR_VELO.bat\n  pause\n)\n',
+        encoding="utf-8",
+    )
+    (OUT / "DESINSTALAR_VELO.bat").write_text(
+        '@echo off\ncd /d "%~dp0app"\ncall desinstalar.bat\n',
         encoding="utf-8",
     )
     (OUT / "LEEME_PRIMERO.txt").write_text(
-        "1. Ejecute INSTALAR_VELO.bat\n2. Después ejecute INICIAR_VELO.bat\n3. No mueva ni renombre la carpeta app\n",
+        "1. Ejecute INSTALAR_VELO.bat\n2. Después ejecute INICIAR_VELO.bat\n3. No mueva ni renombre la carpeta app\n"
+        "4. Para eliminar Velo: DESINSTALAR_VELO.bat y después borre esta carpeta\n",
         encoding="utf-8",
     )
 

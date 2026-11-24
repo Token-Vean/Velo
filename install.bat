@@ -2,6 +2,9 @@
 setlocal EnableExtensions EnableDelayedExpansion
 title Velo
 cd /d "%~dp0"
+rem Sin caches .pyc: Python no escribe nada en su propia instalacion (la cache
+rem de su biblioteca estandar) y Velo no deja restos fuera de esta carpeta.
+set "PYTHONDONTWRITEBYTECODE=1"
 
 echo.
 echo  ======================================================

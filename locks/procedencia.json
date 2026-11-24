@@ -1,0 +1,104 @@
+{
+  "anyio": [
+    "GitHub:agronholm/anyio"
+  ],
+  "blinker": [
+    "GitHub:pallets-eco/blinker"
+  ],
+  "blis": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "certifi": [
+    "GitHub:certifi/python-certifi"
+  ],
+  "charset-normalizer": [
+    "GitHub:jawah/charset_normalizer"
+  ],
+  "click": [
+    "GitHub:pallets/click"
+  ],
+  "confection": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "cymem": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "flask": [
+    "GitHub:pallets/flask"
+  ],
+  "idna": [
+    "GitHub:kjd/idna"
+  ],
+  "jinja2": [
+    "GitHub:pallets/jinja"
+  ],
+  "markdown-it-py": [
+    "GitHub:executablebooks/markdown-it-py"
+  ],
+  "markupsafe": [
+    "GitHub:pallets/markupsafe"
+  ],
+  "murmurhash": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "networkx": [
+    "GitHub:networkx/networkx"
+  ],
+  "numpy": [
+    "GitHub:numpy/numpy-release"
+  ],
+  "packaging": [
+    "GitHub:pypa/packaging"
+  ],
+  "pillow": [
+    "GitHub:python-pillow/Pillow"
+  ],
+  "pip": [
+    "GitHub:pypa/pip"
+  ],
+  "preshed": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "pydantic": [
+    "GitHub:pydantic/pydantic"
+  ],
+  "pypdf": [
+    "GitHub:py-pdf/pypdf"
+  ],
+  "requests": [
+    "GitHub:psf/requests"
+  ],
+  "smart-open": [
+    "GitHub:piskvorky/smart_open"
+  ],
+  "spacy": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "srsly": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "thinc": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "tqdm": [
+    "GitHub:tqdm/tqdm"
+  ],
+  "typing-extensions": [
+    "GitHub:python/typing_extensions"
+  ],
+  "typing-inspection": [
+    "GitHub:pydantic/typing-inspection"
+  ],
+  "urllib3": [
+    "GitHub:urllib3/urllib3"
+  ],
+  "weasel": [
+    "GitHub:explosion/wheelmonger"
+  ],
+  "werkzeug": [
+    "GitHub:pallets/werkzeug"
+  ],
+  "wrapt": [
+    "GitHub:GrahamDumpleton/wrapt"
+  ]
+}

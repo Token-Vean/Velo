@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -u
 cd "$(dirname "$0")"
+# Sin cachés .pyc: Python no escribe nada en su propia instalación (la caché
+# de su biblioteca estándar) y Velo no deja restos fuera de esta carpeta.
+export PYTHONDONTWRITEBYTECODE=1
 
 echo
 echo "======================================================"
