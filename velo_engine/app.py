@@ -16,6 +16,7 @@ from datetime import datetime
 
 from flask import Flask, g, jsonify, render_template, request, send_file, send_from_directory
 from werkzeug.exceptions import RequestEntityTooLarge
+from werkzeug.security import safe_join
 
 from velo_engine.constants import (
     APP_VERSION,
@@ -144,27 +145,20 @@ def _sessions_root() -> str:
     return root
 
 
-def _session_dir(session_id: str, *, create: bool = True) -> str:
-    safe_id = _sanitize_id(session_id)
-    if not safe_id:
-        raise ValueError("session_id inválido")
-    directory = os.path.abspath(os.path.join(_sessions_root(), safe_id))
-    if not _is_within(_sessions_root(), directory):
-        raise ValueError("Ruta de sesión inválida")
-    if create:
-        os.makedirs(directory, exist_ok=True)
-    return directory
+def _existing_session_dir(session_id: str) -> str | None:
+    """Localiza una sesión creada por Velo entre los directorios reales del workspace."""
+    with os.scandir(_sessions_root()) as entries:
+        for entry in entries:
+            if entry.name == session_id and entry.is_dir(follow_symlinks=False):
+                return entry.path
+    return None
 
 
 def _cleanup_session(session_id: str | None) -> None:
-    if not session_id:
-        return
-    safe_id = _sanitize_id(session_id)
-    if not safe_id:
-        return
-    path = os.path.abspath(os.path.join(_sessions_root(), safe_id))
-    if _is_within(_sessions_root(), path) and os.path.isdir(path):
-        shutil.rmtree(path, ignore_errors=True)
+    if session_id:
+        directory = _existing_session_dir(session_id)
+        if directory:
+            shutil.rmtree(directory, ignore_errors=True)
 
 
 def _log_file_guard_warnings(warnings: tuple[str, ...] | list[str]) -> None:
@@ -351,7 +345,8 @@ def analyze_file():
 
     if ext == ".pdf" and visual_caps.get("fitz") and visual_caps.get("pillow"):
         session_id = uuid.uuid4().hex[:16]
-        session_dir = _session_dir(session_id)
+        session_dir = os.path.join(_sessions_root(), session_id)
+        os.mkdir(session_dir, mode=0o700)
         pdf_path = os.path.join(session_dir, "original.pdf")
         file.save(pdf_path)
 
@@ -514,7 +509,9 @@ def export_envelope():
     envelope["audit"]["residual_risk_note"] = assessment
     session_id = _sanitize_id(data.get("session_id"))
     if session_id:
-        directory = _session_dir(session_id, create=False)
+        directory = _existing_session_dir(session_id)
+        if directory is None:
+            return jsonify(error="La sesión visual ha caducado. Analice de nuevo el PDF."), 409
         try:
             meta = load_session_metadata(directory)
             envelope["visual_review"] = {"session_active": True, "mode": meta["mode"], "page_count": meta["page_count"]}
@@ -541,8 +538,8 @@ def export_envelope():
     log_audit("export", f"DOC={document_id} FINDINGS={len(findings)}")
     prune_stale_export_reports()
     workspace = _workspace_dir()
-    export_path = os.path.join(workspace, f"{document_id}_pii_report.json")
-    if not _is_within(workspace, export_path):
+    export_path = safe_join(workspace, f"{document_id}_pii_report.json")
+    if export_path is None:
         return jsonify({"error": "Ruta de exportación no válida."}), 400
     # Los lectores ven el informe anterior o el nuevo, incluso si el guardado falla.
     tmp_path = None
@@ -570,8 +567,8 @@ def apply_original_redactions():
     if findings is None:
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
-    session_dir = _session_dir(session_id, create=False)
-    if not os.path.isdir(session_dir):
+    session_dir = _existing_session_dir(session_id)
+    if session_dir is None:
         return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
     try:
         applied = apply_redactions_to_original(session_dir, session_id, findings)
@@ -587,8 +584,8 @@ def download_applied_original_pdf(session_id):
     safe_id = _sanitize_id(session_id)
     if not safe_id:
         return jsonify({"error": "Sesión inválida."}), 400
-    session_dir = _session_dir(safe_id, create=False)
-    if not os.path.isdir(session_dir):
+    session_dir = _existing_session_dir(safe_id)
+    if session_dir is None:
         return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
     try:
         applied = load_applied_metadata(session_dir)
@@ -599,8 +596,18 @@ def download_applied_original_pdf(session_id):
         return jsonify(error="Vuelva a aplicar el testado con la versión actual."), 409
     if request.args.get("revision", applied.get("revision")) != applied.get("revision"):
         return jsonify(error="La copia ha cambiado. Vuelva a revisar las páginas."), 409
-    output_path = os.path.join(session_dir, applied["pdf_name"])
-    return _send_reviewed_pdf(output_path, "copia_testada.pdf", applied, request.args.get("draft") == "1")
+    return _send_applied_pdf(session_dir, "copia_testada.pdf", applied, request.args.get("draft") == "1")
+
+
+def _send_applied_pdf(directory, name, applied, allow_draft):
+    try:
+        revision = uuid.UUID(hex=applied["revision"]).hex
+    except (KeyError, TypeError, ValueError, AttributeError):
+        return jsonify(error="Vuelva a aplicar el testado para regenerar la copia."), 409
+    path = os.path.join(directory, f"{revision}_testado.pdf")
+    if os.path.islink(path) or not os.path.isfile(path):
+        return jsonify(error="La copia ya no está disponible."), 404
+    return _send_reviewed_pdf(path, name, applied, allow_draft)
 
 
 def _send_reviewed_pdf(path, name, stats, allow_draft):
@@ -630,8 +637,8 @@ def export_redacted_pdf():
     if findings is None:
         return jsonify({"error": "Formato de hallazgos no válido."}), 400
 
-    session_dir = _session_dir(session_id, create=False)
-    if not os.path.isdir(session_dir):
+    session_dir = _existing_session_dir(session_id)
+    if session_dir is None:
         return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
 
     # Dos modos de exportación (v0.5.0):
@@ -651,9 +658,9 @@ def export_redacted_pdf():
     try:
         if redaction_mode == "image":
             stats = apply_redactions_to_original(session_dir, session_id, findings)
-            return _send_reviewed_pdf(os.path.join(session_dir, stats["pdf_name"]), output_name, stats, allow_draft)
+            return _send_applied_pdf(session_dir, output_name, stats, allow_draft)
         with tempfile.TemporaryDirectory(dir=session_dir) as output_dir:
-            path = os.path.join(output_dir, output_name)
+            path = os.path.join(output_dir, "copia.pdf")
             stats = export_native_redacted_pdf(session_dir, findings, path)
             log_audit("export_native_pdf", f"DOC={document_id} RECT={stats['total_rectangles']} INCIDENCIAS={len(stats['issues'])}")
             return _send_reviewed_pdf(path, output_name, stats, allow_draft)
@@ -669,8 +676,8 @@ def serve_session_asset(session_id, filename):
     if not safe_id:
         return jsonify({"error": "Sesión inválida."}), 400
 
-    session_dir = _session_dir(safe_id, create=False)
-    if not os.path.isdir(session_dir):
+    session_dir = _existing_session_dir(safe_id)
+    if session_dir is None:
         return jsonify({"error": "La sesión visual ya no existe o ha caducado."}), 404
 
     assets_dir = os.path.join(session_dir, "assets")
