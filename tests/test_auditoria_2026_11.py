@@ -182,8 +182,10 @@ def test_purga_subidas_huerfanas(tmp_path):
     app.config["WORKSPACE"] = str(tmp_path)
     huerfana = tmp_path / "0123456789ab.pdf"
     ajena = tmp_path / "mis_notas.pdf"
+    antiguo = time.time() - 60  # la resolución del mtime en Windows es gruesa
     for ruta in (huerfana, ajena):
         ruta.write_bytes(b"%PDF-1.4")
+        os.utime(ruta, (antiguo, antiguo))
     assert prune_orphan_uploads(max_age_seconds=0) == 1
     assert not huerfana.exists() and ajena.exists()
 
