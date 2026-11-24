@@ -6,7 +6,7 @@ python-docx==1.2.0
 # (límites de tamaño de imagen más estrictos, offsets no crecientes en object
 # streams, límite de trabajo en formularios XFA, tamaño de búfer de imagen por
 # bytes reales por píxel). Velo solo usa PdfReader/extract_text (motor fallback).
-pypdf==7.1.0
+pypdf==7.1.1
 
 # Dependencias transitivas con mínimos de seguridad. No se fijan a una versión
 # exacta para que pip resuelva la última corregida, pero nunca por debajo de:
