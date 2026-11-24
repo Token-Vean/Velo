@@ -82,6 +82,39 @@ datos de vulnerabilidades publicadas.
 ## Sobre las dependencias de red de spaCy
 
 spaCy incluye bibliotecas de red (`requests`, `httpx`) para sus comandos de
-descarga de modelos y gestión de proyectos. Velo no las usa: el modelo se
-instala desde el lock y la vigilancia de red (punto 2) comprueba que no hay
-ninguna conexión durante el uso.
+descarga de modelos y gestión de proyectos, y las importa al cargarse. Velo
+no las usa: el modelo se instala desde el lock y la vigilancia de red
+(punto 2) comprueba que no hay ninguna conexión durante el uso.
+
+## Resultados de la revisión de noviembre de 2026
+
+- **Instalación** (Linux, trazada): 23 799 escrituras evaluadas, ninguna
+  fuera de la carpeta de Velo; 164 temporales creados, ninguno queda.
+- **Uso completo** (trazado): 0 conexiones fuera de `127.0.0.1` de Velo,
+  ni DNS; todas las escrituras en la carpeta o en el directorio de datos.
+  Funciona igual sin red.
+- **Paquetes que Velo carga al usarse**: 46 de los 68 instalados. No se
+  cargan nunca, entre otros, onnxruntime, pymupdf4llm, networkx ni psutil
+  (los instala PyMuPDF 2.1 como dependencias).
+- **Entorno**: 6 756 ficheros coinciden con el registro de su paquete; el
+  único `.pth` con código es el conocido de setuptools; ningún paquete fuera
+  de los locks.
+- **Procedencia**: todos los hashes están publicados en PyPI; 1 143 de 1 639
+  ficheros (36 de 68 paquetes) con atestación firmada, todas válidas y de los
+  repositorios oficiales.
+- **Modelo spaCy**: 26 de 26 ficheros idénticos a los de conda-forge y
+  Anaconda; solo el `__init__.py` estándar; 13 funciones de configuración, todas
+  de spaCy o thinc; ningún pickle.
+- **GuardDog**: 68 paquetes escaneados. Las alertas de tipo «threat» se
+  revisaron una a una y corresponden a funciones documentadas o a ficheros de
+  pruebas, por ejemplo:
+  - la integración opcional de tqdm con Telegram;
+  - el instalador de autocompletado de typer, que escribe en `~/.bashrc` solo
+    si se le pide;
+  - `spacy download`, que llama a pip;
+  - cadenas como `/etc/passwd` en los tests de NumPy y spaCy;
+  - caracteres Unicode en tablas de datos;
+  - los lanzadores `.exe` de pip y setuptools para Windows.
+
+  Ninguna presenta indicios de código malicioso.
+- **Avisos conocidos** (pip-audit): ninguno.
