@@ -77,7 +77,7 @@ def test_hallazgo_sin_coordenadas_se_informa(tmp_path):
 
 
 def test_pagina_gigante_limita_la_escala(tmp_path):
-    ruta = tmp_path / "gigante.pdf"
+    ruta = tmp_path / "original.pdf"
     documento = pymupdf.open()
     pagina = documento.new_page(width=14_000, height=14_000)
     pagina.insert_text((72, 72), "Texto en pagina enorme 12345678Z", fontsize=40)

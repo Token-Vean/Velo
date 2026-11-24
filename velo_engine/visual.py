@@ -777,9 +777,13 @@ def _sanitize_derived_pdf(document) -> dict:
     report = {"annotations_removed": 0, "outline_removed": False, "scrubbed": False}
 
     for page in document:
-        annot = page.first_annot
-        while annot is not None:
-            annot = page.delete_annot(annot)
+        # Se vuelve a pedir la primera anotación tras cada borrado: el objeto
+        # que devuelve delete_annot() no siempre queda ligado a la página.
+        for _ in range(100_000):
+            annot = page.first_annot
+            if annot is None:
+                break
+            page.delete_annot(annot)
             report["annotations_removed"] += 1
 
     try:
