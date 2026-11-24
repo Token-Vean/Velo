@@ -56,8 +56,22 @@ init_security(app)
 ALLOWED_EXTENSIONS = {".txt", ".docx", ".pdf"}
 
 
+def _allowed_extension(filename: str) -> str | None:
+    """Devuelve la extensión permitida como constante de la lista blanca.
+
+    No se devuelve el texto del nombre de fichero (dato del usuario) sino el
+    elemento de ALLOWED_EXTENSIONS que coincide: así ninguna ruta ni ningún
+    log depende del nombre enviado por el navegador.
+    """
+    candidate = os.path.splitext(filename or "")[1].lower()
+    for allowed in sorted(ALLOWED_EXTENSIONS):
+        if candidate == allowed:
+            return allowed
+    return None
+
+
 def _allowed_file(filename: str) -> bool:
-    return os.path.splitext(filename)[1].lower() in ALLOWED_EXTENSIONS
+    return _allowed_extension(filename) is not None
 
 
 def _sanitize_id(value: str) -> str:
@@ -331,7 +345,7 @@ def analyze_file():
     # "数据.pdf" quedaba en "pdf", sin extensión, y el fichero se rechazaba.
     # El nombre original no se usa más allá de la extensión: suele contener
     # nombres o DNI y no debe llegar a disco ni a los logs.
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = _allowed_extension(file.filename)
     original_name = f"document{ext}"
     file_ref = uuid.uuid4().hex[:12]
 
@@ -438,7 +452,7 @@ def analyze_file():
         _remove_temp_file(filepath)
 
     if error:
-        logger.warning("Error en extracción de fichero: %s (ref=%s)", error, file_ref)
+        logger.warning("Error en extracción de fichero: %s (ref=%s)", para_log(error), file_ref)
         return jsonify({"error": error}), 400
     if not text:
         logger.warning("Sin texto extraído (ref=%s)", file_ref)

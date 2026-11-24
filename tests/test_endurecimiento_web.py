@@ -50,8 +50,8 @@ def test_csp_no_permite_scripts_inline(client):
 def test_pagina_sin_codigo_inline(client):
     html = client.get("/", headers={"Host": "localhost:7780"}).get_data(as_text=True)
     # Ningún <script> con cuerpo y ningún manejador on*="..."
-    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html)
-    assert not re.search(r"\son[a-z]+\s*=", html)
+    assert not re.search(r"<script(?![^>]*\bsrc=)[^>]*>", html, re.IGNORECASE)
+    assert not re.search(r"\son[a-z]+\s*=", html, re.IGNORECASE)
     assert "/static/app.js" in html
 
 
