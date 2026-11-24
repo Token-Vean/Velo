@@ -51,23 +51,28 @@ if not exist ".venv\Scripts\python.exe" (
 )
 
 set "VENV_PY=.venv\Scripts\python.exe"
+rem Instalacion verificada: version exacta de locks\*.lock y comprobacion del
+rem SHA-256 de cada fichero. --only-binary impide compilar paquetes fuente.
+set "PIP_VERIFICADO=-m pip install --require-hashes --only-binary=:all: --disable-pip-version-check --no-warn-script-location"
 
-echo   Actualizando pip del entorno local...
-%VENV_PY% -m pip install --upgrade pip setuptools wheel --no-warn-script-location
+echo   Actualizando pip (version y hash fijados)...
+%VENV_PY% %PIP_VERIFICADO% -r locks\pip.lock
 if errorlevel 1 (
     echo.
-    echo   [ERROR] No se pudo preparar pip dentro de .venv.
+    echo   [ERROR] No se pudo actualizar pip dentro de .venv.
     echo.
     pause
     goto :eof
 )
 
 echo.
-echo   Instalando dependencias base...
-%VENV_PY% -m pip install -r requirements.txt --no-warn-script-location
+echo   Instalando dependencias base (verificadas por hash)...
+%VENV_PY% %PIP_VERIFICADO% -r locks\requirements.lock
 if errorlevel 1 (
     echo.
     echo   [ERROR] No se pudieron instalar las dependencias base.
+    echo           Si pip informa de un hash que no coincide, NO lo fuerce:
+    echo           puede indicar una descarga manipulada. Avise en el repositorio.
     echo.
     pause
     goto :eof
@@ -75,7 +80,7 @@ if errorlevel 1 (
 
 echo.
 echo   Intentando instalar dependencias visuales opcionales...
-%VENV_PY% -m pip install -r requirements-visual.txt --no-warn-script-location
+%VENV_PY% %PIP_VERIFICADO% -r locks\requirements-visual.lock
 if errorlevel 1 (
     echo   [AVISO] No se pudieron instalar las dependencias visuales.
     echo           Velo arrancara igualmente en modo base.
@@ -84,52 +89,29 @@ if errorlevel 1 (
 )
 
 echo.
-%VENV_PY% -c "import spacy" >nul 2>&1
+%VENV_PY% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
 if %errorlevel% neq 0 (
     echo  ------------------------------------------------------
     echo   DETECCION DE NOMBRES Y APELLIDOS (opcional)
     echo  ------------------------------------------------------
     echo.
+    set "INSTALL_NLP="
     set /p "INSTALL_NLP=  Desea instalar la deteccion de nombres? S/N: "
-    if /i "%INSTALL_NLP%"=="S" (
+    if /i "!INSTALL_NLP!"=="S" (
         echo.
-        echo   Instalando spaCy...
-        %VENV_PY% -m pip install -r requirements-nlp.txt --no-warn-script-location
+        echo   Instalando spaCy y el modelo es_core_news_md ^(verificados por hash^)...
+        %VENV_PY% %PIP_VERIFICADO% -r locks\requirements-nlp.lock
         if errorlevel 1 (
-            echo   [AVISO] No se pudo instalar spaCy.
+            echo   [AVISO] No se pudo instalar spaCy o su modelo.
             echo           Velo arrancara igualmente en modo regex.
         ) else (
-            echo   [OK] spaCy instalado
-            %VENV_PY% -c "import spacy; spacy.load('es_core_news_md')" >nul 2>&1
-            if errorlevel 1 (
-                %VENV_PY% -c "import spacy; spacy.load('es_core_news_sm')" >nul 2>&1
-                if errorlevel 1 (
-                    echo   Descargando modelo es_core_news_md...
-                    %VENV_PY% -m spacy download es_core_news_md --no-warn-script-location
-                    if errorlevel 1 (
-                        echo   Intentando modelo ligero es_core_news_sm...
-                        %VENV_PY% -m spacy download es_core_news_sm --no-warn-script-location
-                        if errorlevel 1 (
-                            echo   [AVISO] No se pudo instalar ningun modelo de spaCy.
-                            echo           Velo arrancara igualmente en modo regex.
-                        ) else (
-                            echo   [OK] Modelo es_core_news_sm instalado
-                        )
-                    ) else (
-                        echo   [OK] Modelo es_core_news_md instalado
-                    )
-                ) else (
-                    echo   [OK] Modelo es_core_news_sm ya disponible
-                )
-            ) else (
-                echo   [OK] Modelo es_core_news_md ya disponible
-            )
+            echo   [OK] spaCy y modelo espanol instalados
         )
     ) else (
         echo   [--] Deteccion de nombres omitida.
     )
 ) else (
-    echo   [OK] spaCy ya esta instalado
+    echo   [OK] spaCy y modelo es_core_news_md ya instalados
 )
 
 echo.
@@ -141,7 +123,7 @@ set "EXITCODE=%ERRORLEVEL%"
 echo.
 if not "%EXITCODE%"=="0" (
     echo   [AVISO] Velo termino con codigo %EXITCODE%.
-    echo   Revise workspace\logs\velo.log
+    echo   Revise los logs en %%LOCALAPPDATA%%\Velo\workspace\logs
 ) else (
     echo   Velo se ha detenido.
 )

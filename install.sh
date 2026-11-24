@@ -33,17 +33,28 @@ if [[ ! -x .venv/bin/python ]]; then
 fi
 VENV_PY=".venv/bin/python"
 
-"$VENV_PY" -m pip install --upgrade pip setuptools wheel
+# Instalación verificada: cada paquete se descarga con la versión exacta de
+# locks/*.lock y pip rechaza cualquier fichero cuyo SHA-256 no coincida.
+# --only-binary impide compilar paquetes fuente (código arbitrario en setup.py).
+PIP_VERIFICADO=(-m pip install --require-hashes --only-binary=:all: --disable-pip-version-check)
 
-echo "Instalando dependencias base..."
-if ! "$VENV_PY" -m pip install -r requirements.txt; then
+echo "Actualizando pip (versión y hash fijados)..."
+if ! "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/pip.lock; then
+  echo "[ERROR] No se pudo actualizar pip dentro de .venv."
+  exit 1
+fi
+
+echo "Instalando dependencias base (verificadas por hash)..."
+if ! "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements.lock; then
   echo "[ERROR] No se pudieron instalar las dependencias base."
+  echo "        Si pip informa de un hash que no coincide, NO lo fuerce:"
+  echo "        puede indicar una descarga manipulada. Avise en el repositorio."
   exit 1
 fi
 
 echo
 echo "Intentando instalar dependencias visuales opcionales..."
-if "$VENV_PY" -m pip install -r requirements-visual.txt; then
+if "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements-visual.lock; then
   echo "[OK] Dependencias visuales instaladas"
 else
   echo "[AVISO] No se pudieron instalar las dependencias visuales."
@@ -51,7 +62,7 @@ else
 fi
 
 echo
-if ! "$VENV_PY" -c "import spacy" >/dev/null 2>&1; then
+if ! "$VENV_PY" -c "import spacy; spacy.load('es_core_news_md')" >/dev/null 2>&1; then
   echo "------------------------------------------------------"
   echo " DETECCIÓN DE NOMBRES Y APELLIDOS (opcional)"
   echo "------------------------------------------------------"
@@ -61,34 +72,18 @@ if ! "$VENV_PY" -c "import spacy" >/dev/null 2>&1; then
 
   if [[ "${INSTALL_NLP^^}" == "S" ]]; then
     echo
-    echo "Instalando spaCy..."
-    if "$VENV_PY" -m pip install -r requirements-nlp.txt; then
-      echo "[OK] spaCy instalado"
-      if ! "$VENV_PY" -c "import spacy; spacy.load('es_core_news_md')" >/dev/null 2>&1; then
-        if ! "$VENV_PY" -c "import spacy; spacy.load('es_core_news_sm')" >/dev/null 2>&1; then
-          echo "Descargando modelo español (es_core_news_md)..."
-          if "$VENV_PY" -m spacy download es_core_news_md; then
-            echo "[OK] Modelo es_core_news_md instalado"
-          else
-            echo "Intentando modelo ligero (es_core_news_sm)..."
-            if "$VENV_PY" -m spacy download es_core_news_sm; then
-              echo "[OK] Modelo es_core_news_sm instalado"
-            else
-              echo "[AVISO] No se pudo descargar el modelo español."
-              echo "        Velo arrancará igualmente en modo regex."
-            fi
-          fi
-        fi
-      fi
+    echo "Instalando spaCy y el modelo es_core_news_md (verificados por hash)..."
+    if "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements-nlp.lock; then
+      echo "[OK] spaCy y modelo español instalados"
     else
-      echo "[AVISO] No se pudo instalar spaCy."
+      echo "[AVISO] No se pudo instalar spaCy o su modelo."
       echo "        Velo arrancará igualmente en modo regex."
     fi
   else
     echo "[--] Detección de nombres omitida."
   fi
 else
-  echo "[OK] spaCy ya instalado"
+  echo "[OK] spaCy y modelo es_core_news_md ya instalados"
 fi
 
 echo

@@ -17,6 +17,7 @@ INCLUDE = [
     "requirements.txt",
     "requirements-visual.txt",
     "requirements-nlp.txt",
+    "locks",
     "velo_engine",
 ]
 

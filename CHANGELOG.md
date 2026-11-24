@@ -53,6 +53,19 @@
 - **spaCy**: el modelo se carga una vez por proceso, no en cada análisis ni en
   cada consulta a `/api/status`.
 
+- **Instalación verificada por hash**: los instaladores instalan desde
+  `locks/*.lock` con `--require-hashes --only-binary=:all:` (versión exacta y
+  SHA-256 de cada fichero, sin compilar paquetes fuente), incluidos pip y el
+  modelo `es_core_news_md` 3.8.0, que pasa a fijarse por URL y hash en lugar
+  de descargarse con `spacy download`. El contenido del modelo se contrasta en
+  CI con los paquetes independientes de conda-forge y Anaconda (26 de 26
+  ficheros idénticos). Nuevo workflow `dependencias-bloqueadas`: coherencia de
+  los locks, instalación real en Windows/macOS/Linux con Python 3.11 y 3.13, y
+  regeneración bajo demanda.
+- **install.bat**: la pregunta de instalar spaCy no funcionaba (la respuesta
+  se leía con expansión `%…%` dentro del bloque y siempre quedaba vacía); la
+  ruta de logs indicada al salir era la anterior a #19.
+
 ### Anteriores
 
 - **Privacidad — curso 2026 (#19)**: detección de DNI con guion o puntos, NIE

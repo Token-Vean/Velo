@@ -1,26 +1,39 @@
 name: dependencias-bloqueadas
 
-# Genera y verifica los locks con hashes de locks/.
-#  - En cada push o PR que toque dependencias: regenera los locks en limpio y
-#    los publica como artefacto (para revisarlos o subirlos).
-#  - Lanzado a mano con «regenerar = true» sobre una rama (p. ej. un PR de
-#    Dependabot): además hace commit de los locks regenerados en esa rama.
+# Locks con hashes de locks/ (instalación verificada).
+#  - comprobar: los locks corresponden a requirements*.txt y todo lleva hash.
+#  - instalar:  instalación real con --require-hashes en Windows, macOS y
+#               Linux, Python 3.11 y 3.13, como hacen los instaladores, y
+#               pruebas de Velo sobre ese entorno.
+#  - generar:   contrasta el modelo spaCy con fuentes independientes, regenera
+#               los locks en limpio y los vuelca en el log. Lanzado a mano con
+#               «regenerar = true» sobre una rama (p. ej. un PR de Dependabot)
+#               hace además commit de los locks en esa rama.
 
 on:
   push:
     paths:
       - "requirements*.txt"
       - "locks/**"
+      - "install.sh"
+      - "install.bat"
       - "tools/generar_locks.sh"
+      - "tools/comprobar_locks.py"
       - "tools/verificar_modelo_spacy.py"
       - ".github/workflows/dependencias-bloqueadas.yml"
   pull_request:
     paths:
       - "requirements*.txt"
       - "locks/**"
+      - "install.sh"
+      - "install.bat"
       - "tools/generar_locks.sh"
+      - "tools/comprobar_locks.py"
       - "tools/verificar_modelo_spacy.py"
       - ".github/workflows/dependencias-bloqueadas.yml"
+  schedule:
+    # Semanal: detecta si una publicación fijada desaparece o cambia.
+    - cron: "17 5 * * 1"
   workflow_dispatch:
     inputs:
       regenerar:
@@ -36,6 +49,65 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  comprobar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Locks coherentes con requirements*.txt
+        run: python -I tools/comprobar_locks.py
+
+  instalar:
+    needs: comprobar
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.11", "3.13"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Instalar como los instaladores (pip, base, visual, NLP con hashes)
+        shell: bash
+        run: |
+          python -m venv .venv
+          if [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
+          echo "PY=$PY" >> "$GITHUB_ENV"
+          FLAGS="--require-hashes --only-binary=:all: --disable-pip-version-check"
+          for lock in pip requirements requirements-visual requirements-nlp; do
+            echo "::group::$lock.lock"
+            "$PY" -m pip install $FLAGS -r "locks/$lock.lock"
+            echo "::endgroup::"
+          done
+          "$PY" -m pip check
+
+      - name: Componentes operativos
+        shell: bash
+        run: |
+          "$PY" -c "import flask, waitress, docx, pypdf; print('base OK')"
+          "$PY" -c "import pymupdf, PIL; print('visual OK', pymupdf.version)"
+          "$PY" -c "import spacy; nlp = spacy.load('es_core_news_md'); print('NLP OK', [(e.text, e.label_) for e in nlp('Ana García vive en Toledo.').ents])"
+
+      - name: Pruebas de Velo en el entorno verificado
+        shell: bash
+        run: |
+          "$PY" -m pip install --disable-pip-version-check pytest
+          "$PY" -m pytest -q
+
   generar:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -50,18 +122,30 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Contrastar el modelo spaCy del lock del repositorio
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python -I tools/verificar_modelo_spacy.py
+
       - name: Instalar uv
         run: |
           python -m pip install "uv==0.13.9"
           uv --version
 
-      - name: Generar locks
+      - name: Regenerar locks en limpio
         run: bash tools/generar_locks.sh
 
-      - name: Contrastar el hash del modelo spaCy
+      - name: Contrastar el modelo spaCy del lock regenerado
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: python -I tools/verificar_modelo_spacy.py
+
+      - name: Diferencias con los locks del repositorio
+        if: always()
+        run: |
+          git status --short locks/
+          git diff --stat -- locks/ || true
+          git diff -U0 -- locks/ | grep -E '^[-+][a-z0-9_.-]+(==| @ )' || echo "Sin cambios de versión."
 
       - name: Volcar locks en el log (con su SHA-256)
         if: always()
@@ -72,10 +156,6 @@ jobs:
             cat "$f"
             echo "=====FIN $f"
           done
-
-      - name: Diferencias con los locks del repositorio
-        if: always()
-        run: git status --short locks/ && git diff --stat -- locks/ || true
 
       - name: Publicar locks como artefacto
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -96,5 +176,5 @@ jobs:
           else
             git commit -m "Regenerar locks con hashes"
             git push
-            echo "::notice::Locks actualizados. Relance security-checks sobre esta rama."
+            echo "::notice::Locks actualizados. Relance los workflows sobre esta rama para verificarlos."
           fi

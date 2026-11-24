@@ -29,12 +29,18 @@ Velo is designed for **strictly local and personal use** by a professional user 
 - Document parsers remain complex third-party dependencies (MuPDF, pypdf,
   lxml, Pillow, Tesseract). Keep `requirements*.txt` at the pinned versions
   and accept Dependabot updates after CI passes.
-- Dependencies are pinned by version, not by hash. A fully reproducible,
-  hash-verified install (`pip install --require-hashes`) needs a lock file
-  generated with `pip-compile --generate-hashes` per platform.
-- spaCy language models (`es_core_news_md` / `es_core_news_sm`) are downloaded
-  by `python -m spacy download` without hash verification. Install them from a
-  trusted network or pin the wheel URL with its SHA-256.
+- Installs are hash-verified (`locks/`, `pip install --require-hashes
+  --only-binary=:all:`), including pip itself and the Spanish spaCy model.
+  Hashes pin the files published at lock time: they protect against
+  tampering after that moment, not against a release that was already
+  malicious when locked. Locks are generated in GitHub Actions; review the
+  version diff the workflow prints before merging a regenerated lock.
+- The spaCy model (`es_core_news_md` 3.8.0) is not on PyPI and its GitHub
+  release has no published digest. Its content is cross-checked file by file
+  against the conda-forge and Anaconda `main` packages built independently
+  in 2024 (`tools/verificar_modelo_spacy.py`, run in CI weekly).
+- CI tooling (bandit, pip-audit, pytest, ruff, uv) is installed by version,
+  not by hash; it does not ship to users.
 - Tesseract is a system binary installed by the user; keep it updated through
   the OS package manager or the official installer.
 - Native PDF redaction removes text, annotations, attachments, outline,
