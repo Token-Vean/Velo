@@ -113,6 +113,16 @@ python -m pip install --require-hashes --only-binary=:all: -r locks/requirements
 python run.py
 ```
 
+## What it touches and how to remove it
+
+Velo only writes to its own folder and its data directory (Windows:
+`%LOCALAPPDATA%\Velo`; macOS: `~/Library/Application Support/Velo`; Linux:
+`~/.local/state/velo`) and makes no network connections while running. To
+remove it: shut it down, run `desinstalar.bat` or `./desinstalar.sh`, then
+delete the folder. What CI verifies on every change (network and file-system
+tracing, environment audit, provenance, model review) is described in
+[docs/INSTALACION_SEGURA.md](docs/INSTALACION_SEGURA.md) (Spanish).
+
 ## Repository Structure
 
 ```text

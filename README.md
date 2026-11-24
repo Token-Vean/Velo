@@ -68,6 +68,15 @@ python -m pip install --require-hashes --only-binary=:all: -r locks/requirements
 python run.py
 ```
 
+### Qué toca en tu equipo y cómo eliminarlo
+
+Velo solo escribe en su carpeta y en su directorio de datos (Windows:
+`%LOCALAPPDATA%\Velo`; macOS: `~/Library/Application Support/Velo`; Linux:
+`~/.local/state/velo`), y no se conecta a internet mientras funciona. Para
+eliminarlo: apágalo, ejecuta `desinstalar.bat` o `./desinstalar.sh` y borra la
+carpeta. Qué se comprueba en cada versión y con qué límites:
+[docs/INSTALACION_SEGURA.md](docs/INSTALACION_SEGURA.md).
+
 ## Distribución simplificada para usuarios no expertos
 
 No es recomendable deformar la raíz del repositorio fuente para ocultar archivos de desarrollo. En cambio, sí es recomendable generar un **paquete distribuible** distinto, con esta estructura:

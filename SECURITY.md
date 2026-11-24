@@ -39,8 +39,19 @@ Velo is designed for **strictly local and personal use** by a professional user 
   release has no published digest. Its content is cross-checked file by file
   against the conda-forge and Anaconda `main` packages built independently
   in 2024 (`tools/verificar_modelo_spacy.py`, run in CI weekly).
-- CI tooling (bandit, pip-audit, pytest, ruff, uv) is installed by version,
-  not by hash; it does not ship to users.
+- CI tooling (bandit, pip-audit, pytest, ruff, uv, GuardDog,
+  pypi-attestations) is installed by version, not by hash; it does not ship
+  to users.
+- Install and runtime are traced with strace on Linux (no network except
+  Velo's own loopback interface, including DNS; no writes outside the app
+  folder and its data directory), with a negative control proving the
+  analyser detects violations. Only the exercised flows are observed.
+- Provenance: every locked hash must be a file published on PyPI; Sigstore
+  attestations are verified for the 36/68 packages that publish them and the
+  publisher repositories are pinned in `locks/procedencia.json`.
+- Removal: `desinstalar.sh` / `desinstalar.bat` delete the virtual
+  environment and the data directory; CI checks that nothing remains and that
+  the folder is identical to the repository. See docs/INSTALACION_SEGURA.md.
 - Tesseract is a system binary installed by the user; keep it updated through
   the OS package manager or the official installer.
 - Native PDF redaction removes text, annotations, attachments, outline,

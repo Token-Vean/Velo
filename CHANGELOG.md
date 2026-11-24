@@ -66,6 +66,26 @@
   se leía con expansión `%…%` dentro del bloque y siempre quedaba vacía); la
   ruta de logs indicada al salir era la anterior a #19.
 
+- **Instalación sin temor y desinstalación completa**: nuevos
+  `desinstalar.sh` y `desinstalar.bat` (también en el paquete distribuible
+  como `DESINSTALAR_VELO.bat`). Los instaladores no dejan cachés fuera de la
+  carpeta (`--no-cache-dir`, `PYTHONDONTWRITEBYTECODE=1`). En CI: instalación
+  y uso trazados con strace sin conexiones externas (ni DNS) ni escrituras
+  fuera de la carpeta y del directorio de datos, con control negativo; uso en
+  un espacio sin red; auditoría del entorno (`.pth` ejecutables,
+  `sitecustomize`, paquetes fuera de lock, RECORD); revisión del código, el
+  registro y la ausencia de pickle en el modelo spaCy; hashes publicados en
+  PyPI y atestaciones Sigstore verificadas con publicadores fijados
+  (`locks/procedencia.json`); escaneo GuardDog; y desinstalación sin restos
+  en Windows, macOS y Linux. Explicación para usuarios:
+  `docs/INSTALACION_SEGURA.md`.
+- **Apagado limpio**: el botón «Apagar» enviaba SIGINT al propio proceso. En
+  Windows equivale a terminarlo con código 2 (el instalador mostraba «Velo
+  terminó con código 2») y lanzado en segundo plano no surtía efecto. Ahora
+  limpia sesiones, vacía los logs y sale con código 0.
+- **install.sh en macOS**: usaba `${VAR^^}`, que la bash 3.2 de macOS no
+  admite; la pregunta de instalar spaCy fallaba.
+
 ### Anteriores
 
 - **Privacidad — curso 2026 (#19)**: detección de DNI con guion o puntos, NIE
