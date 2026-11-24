@@ -63,6 +63,16 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
         run: python -I tools/verificar_modelo_spacy.py
 
+      - name: Volcar locks en el log (con su SHA-256)
+        if: always()
+        run: |
+          sha256sum locks/*
+          for f in locks/*; do
+            echo "=====INICIO $f"
+            cat "$f"
+            echo "=====FIN $f"
+          done
+
       - name: Diferencias con los locks del repositorio
         if: always()
         run: git status --short locks/ && git diff --stat -- locks/ || true
