@@ -1,6 +1,6 @@
 name: temporal-consulta-alertas
-# Temporal: lista las alertas de seguridad del repositorio en el log. Se borra
-# después de usarlo.
+# Temporal: lista las alertas de seguridad y audita dependencias de main y de
+# la rama. Se borra después de usarlo.
 on:
   push:
     paths:
@@ -13,11 +13,28 @@ jobs:
   alertas:
     runs-on: ubuntu-latest
     steps:
-      - name: Alertas
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Alertas de code scanning (todas las ramas)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for ep in "code-scanning/alerts?state=open&per_page=100" "code-scanning/analyses?per_page=5" "dependabot/alerts?state=open&per_page=100" "secret-scanning/alerts?state=open&per_page=100"; do
-            echo "===== $ep"
-            gh api "repos/$GITHUB_REPOSITORY/$ep" --jq '.[] | [(.number // .id // ""), (.state // ""), (.rule.id // .security_advisory.ghsa_id // .secret_type // .tool.name // ""), (.rule.severity // .security_advisory.severity // ""), (.most_recent_instance.ref // .dependency.manifest_path // .ref // ""), (.most_recent_instance.location.path // .dependency.package.name // ""), ((.most_recent_instance.location.start_line // "")|tostring), (.rule.description // .security_advisory.summary // .created_at // "")] | @tsv' 2>&1 || true
+          gh api "repos/$GITHUB_REPOSITORY/code-scanning/alerts?state=open&per_page=100" \
+            --jq '.[] | [.number, .rule.id, .rule.security_severity_level // .rule.severity, .most_recent_instance.ref, .most_recent_instance.commit_sha[0:9], .most_recent_instance.location.path, (.most_recent_instance.location.start_line|tostring), .created_at] | @tsv'
+      - name: pip-audit de las dependencias de main y de los locks de la rama
+        run: |
+          python -m pip install --disable-pip-version-check -q pip-audit
+          git fetch -q origin main
+          for f in requirements.txt requirements-visual.txt requirements-nlp.txt; do
+            git show origin/main:$f > main-$f
+            echo "===== main: $f"
+            pip-audit -r main-$f --desc on 2>&1 | tail -30 || true
+          done
+          for l in requirements requirements-visual; do
+            echo "===== rama: locks/$l.lock"
+            pip-audit --require-hashes --disable-pip --no-deps -r locks/$l.lock --desc on 2>&1 | tail -20 || true
           done
