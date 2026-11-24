@@ -212,7 +212,7 @@ jobs:
       - name: Escanear todos los paquetes de los locks
         run: python tools/escanear_guarddog.py --salida guarddog
       - name: Publicar informe
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: informe-guarddog
@@ -269,7 +269,7 @@ jobs:
           done
 
       - name: Publicar locks como artefacto
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
           name: locks-generados
