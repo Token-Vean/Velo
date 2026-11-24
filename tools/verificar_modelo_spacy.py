@@ -10,13 +10,15 @@ buena. Este script lo contrasta con:
   1. La descarga actual del wheel (el hash del lock sigue sirviendo).
   2. El digest SHA-256 que GitHub calcula y publica para cada fichero de una
      release (API de releases de explosion/spacy-models).
-  3. El wheel del mismo modelo en Hugging Face (repositorio spacy/<modelo>),
-     publicado por Explosion por un canal distinto. Es otra compilación del
-     wheel (otro nombre y otro hash global), así que se compara el contenido:
-     el SHA-256 de cada fichero del modelo según el RECORD de ambos wheels.
+  3. Los paquetes del mismo modelo y versión que conda-forge y el canal
+     «main» de Anaconda construyeron por su cuenta (diciembre de 2024 para la
+     3.8.0). Son otros empaquetados (otro hash global), así que se compara el
+     contenido: el SHA-256 de cada fichero del modelo.
+  4. Hugging Face (spacy/<modelo>), si aloja esa misma versión.
 
-Falla si alguna fuente contradice el lock o si ninguna fuente independiente
-(2 o 3) lo confirma. Solo usa la biblioteca estándar.
+Falla si alguna fuente que tenga la misma versión contradice el lock, o si
+ninguna fuente independiente (2, 3 o 4) lo confirma. Usa la biblioteca
+estándar y, para paquetes .conda, el programa `zstd`.
 """
 
 from __future__ import annotations
@@ -28,7 +30,11 @@ import io
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
+import tarfile
+import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -71,6 +77,66 @@ def _contenido_modelo(wheel: bytes) -> dict[str, str]:
                 raise ValueError(f"RECORD no coincide con el contenido de {fila[0]}")
             resultado[fila[0]] = valor
     return resultado
+
+
+def _b64(digest: bytes) -> str:
+    return base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+
+
+def _ficheros_modelo(contenido: dict[str, str], nombre: str, version: str) -> dict[str, str]:
+    """Normaliza rutas a partir de «<nombre>/» y filtra la versión indicada."""
+    prefijo = f"{nombre}/{nombre}-{version}/"
+    salida = {}
+    for ruta, valor in contenido.items():
+        indice = ruta.find(prefijo)
+        if indice >= 0:
+            salida[ruta[indice:]] = valor
+    return salida
+
+
+def _contenido_conda(paquete: bytes, nombre_fichero: str) -> dict[str, str]:
+    resultado: dict[str, str] = {}
+
+    def _desde_tar(datos_tar) -> None:
+        with tarfile.open(fileobj=datos_tar, mode="r:*") as tf:
+            for miembro in tf.getmembers():
+                if miembro.isfile():
+                    resultado[miembro.name] = _b64(hashlib.sha256(tf.extractfile(miembro).read()).digest())
+
+    if nombre_fichero.endswith(".tar.bz2"):
+        _desde_tar(io.BytesIO(paquete))
+        return resultado
+    # .conda: zip con pkg-*.tar.zst
+    with zipfile.ZipFile(io.BytesIO(paquete)) as zf:
+        interno = next(n for n in zf.namelist() if n.startswith("pkg-") and n.endswith(".tar.zst"))
+        comprimido = zf.read(interno)
+    zstd = shutil.which("zstd")
+    if not zstd:
+        raise RuntimeError("falta el programa zstd para abrir paquetes .conda")
+    with tempfile.TemporaryDirectory() as tmp:
+        origen = Path(tmp) / "pkg.tar.zst"
+        origen.write_bytes(comprimido)
+        subprocess.run([zstd, "-q", "-d", str(origen), "-o", str(Path(tmp) / "pkg.tar")], check=True)  # noqa: S603
+        with open(Path(tmp) / "pkg.tar", "rb") as handle:
+            _desde_tar(handle)
+    return resultado
+
+
+def _comparar(etiqueta: str, referencia: dict[str, str], otro: dict[str, str],
+              confirmaciones: list[str], fallos: list[str]) -> None:
+    if not otro:
+        print(f"      {etiqueta}: no contiene esta versión del modelo")
+        return
+    distintos = sorted(r for r in referencia if r in otro and otro[r] != referencia[r])
+    ausentes = sorted(r for r in referencia if r not in otro)
+    iguales = len(referencia) - len(distintos) - len(ausentes)
+    print(f"      {etiqueta}: {iguales} iguales, {len(distintos)} distintos, {len(ausentes)} ausentes")
+    for ruta in (distintos + ausentes)[:10]:
+        print(f"        - {ruta}")
+    if distintos:
+        fallos.append(f"{etiqueta}: el contenido del modelo difiere")
+    elif not ausentes:
+        confirmaciones.append(f"{etiqueta} ({iguales} ficheros idénticos)")
 
 
 def _leer_lock() -> tuple[str, str, str, str, set[str]]:
@@ -124,32 +190,49 @@ def main() -> int:
     except Exception as exc:  # noqa: BLE001
         print(f"[2] Digest de GitHub:       no disponible ({type(exc).__name__}: {exc})")
 
+    version = tag.rsplit("-", 1)[-1]
+    referencia = _ficheros_modelo(_contenido_modelo(wheel_github), nombre, version)
+    print(f"    Ficheros del modelo en el wheel de GitHub: {len(referencia)}")
+    if not referencia:
+        fallos.append("el wheel de GitHub no contiene la carpeta del modelo esperada")
+
+    print("[3] Paquetes conda construidos por terceros:")
+    for canal in ("conda-forge", "main"):
+        etiqueta = f"Anaconda {canal}"
+        try:
+            ficheros = json.loads(_get(
+                f"https://api.anaconda.org/package/{canal}/spacy-model-{nombre}/files"
+            ))
+            candidatos = [f for f in ficheros if f.get("version") == version]
+            if not candidatos:
+                print(f"      {etiqueta}: sin versión {version}")
+                continue
+            elegido = sorted(candidatos, key=lambda f: not str(f.get("basename", "")).endswith(".tar.bz2"))[0]
+            url_pkg = elegido.get("download_url", "")
+            if url_pkg.startswith("//"):
+                url_pkg = "https:" + url_pkg
+            paquete = _get(url_pkg)
+            sha_pkg = hashlib.sha256(paquete).hexdigest()
+            if elegido.get("sha256") and elegido["sha256"] != sha_pkg:
+                fallos.append(f"{etiqueta}: el paquete descargado no coincide con su sha256 publicado")
+                continue
+            print(f"      {etiqueta}: {elegido.get('basename')} (subido {elegido.get('upload_time')})")
+            otro = _ficheros_modelo(_contenido_conda(paquete, str(elegido.get("basename"))), nombre, version)
+            _comparar(etiqueta, referencia, otro, confirmaciones, fallos)
+        except Exception as exc:  # noqa: BLE001
+            print(f"      {etiqueta}: no disponible ({type(exc).__name__}: {exc})")
+
+    print("[4] Hugging Face:")
     try:
         arbol = json.loads(_get(f"https://huggingface.co/api/models/spacy/{nombre}/tree/main"))
         ruedas = [e["path"] for e in arbol if str(e.get("path", "")).endswith(".whl")]
         if not ruedas:
             raise LookupError("sin wheels en el repositorio")
-        contenido_github = _contenido_modelo(wheel_github)
         wheel_hf = _get(f"https://huggingface.co/spacy/{nombre}/resolve/main/{ruedas[0]}")
-        contenido_hf = _contenido_modelo(wheel_hf)
-        print(
-            f"[3] Hugging Face spacy/{nombre}/{ruedas[0]}: "
-            f"{len(contenido_hf)} ficheros; GitHub: {len(contenido_github)} ficheros"
-        )
-        if contenido_github and contenido_github == contenido_hf:
-            confirmaciones.append(
-                f"Hugging Face (los {len(contenido_hf)} ficheros del modelo son idénticos byte a byte)"
-            )
-        else:
-            solo_gh = sorted(set(contenido_github.items()) - set(contenido_hf.items()))
-            solo_hf = sorted(set(contenido_hf.items()) - set(contenido_github.items()))
-            for ruta, valor in solo_gh[:10]:
-                print(f"      distinto/ausente en HF: {ruta} {valor}")
-            for ruta, valor in solo_hf[:10]:
-                print(f"      distinto/ausente en GitHub: {ruta} {valor}")
-            fallos.append("el contenido del modelo difiere entre GitHub y Hugging Face")
+        otro = _ficheros_modelo(_contenido_modelo(wheel_hf), nombre, version)
+        _comparar(f"Hugging Face {ruedas[0]}", referencia, otro, confirmaciones, fallos)
     except Exception as exc:  # noqa: BLE001
-        print(f"[3] Hugging Face:           no disponible ({type(exc).__name__}: {exc})")
+        print(f"      no disponible ({type(exc).__name__}: {exc})")
 
     if fallos:
         print("[ERROR] " + "; ".join(fallos))
