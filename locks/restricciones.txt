@@ -148,7 +148,7 @@ pymupdf4llm==2.1
     # via
     #   pymupdf
     #   pymupdf-layout
-pypdf==7.1.0
+pypdf==7.1.1
     # via -r requirements.txt
 pytesseract==0.3.13
     # via -r requirements-visual.txt
