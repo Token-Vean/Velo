@@ -29,7 +29,7 @@ from pathlib import Path
 
 LOCK = Path(__file__).resolve().parents[1] / "locks" / "requirements-nlp.lock"
 PATRON_URL = re.compile(
-    r"^(?P<nombre>es_core_news_\w+) @ (?P<url>https://github\.com/explosion/spacy-models/"
+    r"^(?P<nombre>es[-_]core[-_]news[-_][a-z]+) @ (?P<url>https://github\.com/explosion/spacy-models/"
     r"releases/download/(?P<tag>[^/]+)/(?P<fichero>[^\s]+\.whl))"
 )
 
@@ -56,7 +56,7 @@ def _leer_lock() -> tuple[str, str, str, str, set[str]]:
             if siguiente is not linea and not siguiente.startswith(" "):
                 break
         return (
-            coincidencia["nombre"], coincidencia["url"], coincidencia["tag"],
+            coincidencia["nombre"].replace("-", "_"), coincidencia["url"], coincidencia["tag"],
             coincidencia["fichero"], hashes,
         )
     sys.exit(f"[ERROR] No se encontró el modelo spaCy con URL de GitHub en {LOCK}")
