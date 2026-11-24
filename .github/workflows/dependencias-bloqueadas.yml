@@ -1,14 +1,21 @@
 name: dependencias-bloqueadas
 
-# Locks con hashes de locks/ (instalación verificada).
-#  - comprobar: los locks corresponden a requirements*.txt y todo lleva hash.
-#  - instalar:  instalación real con --require-hashes en Windows, macOS y
-#               Linux, Python 3.11 y 3.13, como hacen los instaladores, y
-#               pruebas de Velo sobre ese entorno.
-#  - generar:   contrasta el modelo spaCy con fuentes independientes, regenera
-#               los locks en limpio y los vuelca en el log. Lanzado a mano con
-#               «regenerar = true» sobre una rama (p. ej. un PR de Dependabot)
-#               hace además commit de los locks en esa rama.
+# Instalación verificada y vigilada de Velo.
+#  - comprobar:   los locks corresponden a requirements*.txt y todo lleva hash.
+#  - instalar:    Windows, macOS y Linux × Python 3.11 y 3.13: instalación
+#                 con --require-hashes, auditoría del entorno (código de
+#                 arranque oculto, paquetes fuera de lock, ficheros alterados),
+#                 revisión del modelo spaCy, pruebas, prueba de humo de
+#                 extremo a extremo y desinstalación sin restos.
+#  - vigilancia:  Linux con strace: instalación y uso sin conexiones externas
+#                 ni escrituras fuera de la carpeta y del directorio de datos;
+#                 uso en un espacio sin red; carpeta idéntica al repositorio
+#                 tras desinstalar.
+#  - procedencia: hashes publicados en PyPI, atestaciones firmadas (Sigstore)
+#                 verificadas y publicadores iguales a locks/procedencia.json.
+#  - guarddog:    escaneo heurístico de paquetes maliciosos (informe).
+#  - generar:     contrasta el modelo spaCy con fuentes independientes y
+#                 regenera los locks. Con «regenerar = true» hace commit.
 
 on:
   push:
@@ -17,9 +24,9 @@ on:
       - "locks/**"
       - "install.sh"
       - "install.bat"
-      - "tools/generar_locks.sh"
-      - "tools/comprobar_locks.py"
-      - "tools/verificar_modelo_spacy.py"
+      - "desinstalar.sh"
+      - "desinstalar.bat"
+      - "tools/**"
       - ".github/workflows/dependencias-bloqueadas.yml"
       # La matriz ejecuta las pruebas en Windows y macOS: también se lanza
       # cuando cambia el código o las pruebas.
@@ -32,17 +39,15 @@ on:
       - "locks/**"
       - "install.sh"
       - "install.bat"
-      - "tools/generar_locks.sh"
-      - "tools/comprobar_locks.py"
-      - "tools/verificar_modelo_spacy.py"
+      - "desinstalar.sh"
+      - "desinstalar.bat"
+      - "tools/**"
       - ".github/workflows/dependencias-bloqueadas.yml"
-      # La matriz ejecuta las pruebas en Windows y macOS: también se lanza
-      # cuando cambia el código o las pruebas.
       - "velo_engine/**"
       - "tests/**"
       - "run.py"
   schedule:
-    # Semanal: detecta si una publicación fijada desaparece o cambia.
+    # Semanal: avisos nuevos, publicaciones retiradas o procedencia cambiada.
     - cron: "17 5 * * 1"
   workflow_dispatch:
     inputs:
@@ -80,9 +85,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.11", "3.13"]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
       PYTHONPATH: ${{ github.workspace }}
+      BROWSER: "true"
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,12 +101,11 @@ jobs:
           python-version: ${{ matrix.python }}
 
       - name: Instalar como los instaladores (pip, base, visual, NLP con hashes)
-        shell: bash
         run: |
           python -m venv .venv
           if [ -x .venv/Scripts/python.exe ]; then PY=.venv/Scripts/python.exe; else PY=.venv/bin/python; fi
           echo "PY=$PY" >> "$GITHUB_ENV"
-          FLAGS="--require-hashes --only-binary=:all: --disable-pip-version-check"
+          FLAGS="--require-hashes --only-binary=:all: --disable-pip-version-check --no-cache-dir"
           for lock in pip requirements requirements-visual requirements-nlp; do
             echo "::group::$lock.lock"
             "$PY" -m pip install $FLAGS -r "locks/$lock.lock"
@@ -105,18 +113,110 @@ jobs:
           done
           "$PY" -m pip check
 
-      - name: Componentes operativos
-        shell: bash
-        run: |
-          "$PY" -c "import flask, waitress, docx, pypdf; print('base OK')"
-          "$PY" -c "import pymupdf, PIL; print('visual OK', pymupdf.version)"
-          "$PY" -c "import spacy; nlp = spacy.load('es_core_news_md'); print('NLP OK', [(e.text, e.label_) for e in nlp('Ana García vive en Toledo.').ents])"
+      - name: Auditoría del entorno instalado
+        run: '"$PY" tools/auditar_entorno.py'
+
+      - name: Revisión del modelo spaCy
+        run: '"$PY" tools/revisar_modelo_spacy.py'
 
       - name: Pruebas de Velo en el entorno verificado
-        shell: bash
         run: |
-          "$PY" -m pip install --disable-pip-version-check pytest
-          "$PY" -m pytest -q
+          "$PY" -m pip install --disable-pip-version-check --no-cache-dir pytest
+          "$PY" -m pytest -q -p no:cacheprovider
+          rm -rf workspace
+
+      - name: Prueba de humo con la aplicación real
+        run: |
+          "$PY" run.py > servidor.log 2>&1 &
+          SERVIDOR=$!
+          if ! "$PY" tools/prueba_humo.py; then cat servidor.log; exit 1; fi
+          wait $SERVIDOR || { echo "Velo terminó con código $?"; cat servidor.log; exit 1; }
+          rm -f servidor.log
+
+      - name: Desinstalar y comprobar que no queda nada
+        run: |
+          case "$RUNNER_OS" in
+            Windows) DATOS="$LOCALAPPDATA/Velo"; cmd //c "desinstalar.bat /S" ;;
+            macOS)   DATOS="$HOME/Library/Application Support/Velo"; bash desinstalar.sh --si ;;
+            *)       DATOS="${XDG_STATE_HOME:-$HOME/.local/state}/velo"; bash desinstalar.sh --si ;;
+          esac
+          FALLOS=0
+          [ -e .venv ] && { echo "[ERROR] Queda .venv"; FALLOS=1; }
+          [ -e "$DATOS" ] && { echo "[ERROR] Queda $DATOS"; FALLOS=1; }
+          RESTOS="$(git status --porcelain --ignored --untracked-files=all)"
+          if [ -n "$RESTOS" ]; then echo "[ERROR] Restos en la carpeta:"; echo "$RESTOS"; FALLOS=1; fi
+          [ $FALLOS -eq 0 ] && echo "[OK] Sin restos tras desinstalar"
+          exit $FALLOS
+
+  vigilancia:
+    needs: comprobar
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Instalar strace
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq strace
+      - name: Instalación, uso con y sin red, y desinstalación vigilados
+        env:
+          PYTHON_BASE: python
+        run: bash tools/vigilar_linux.sh
+
+  procedencia:
+    needs: comprobar
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Descargar los ficheros de los locks (verificados por hash)
+        run: |
+          for lock in pip requirements requirements-visual requirements-nlp; do
+            python -m pip download --require-hashes --only-binary=:all: --no-deps --no-cache-dir \
+              --disable-pip-version-check -d descargas -r "locks/$lock.lock"
+          done
+          ls descargas | wc -l
+      - name: Herramienta de verificación de atestaciones
+        run: |
+          python -m pip install --disable-pip-version-check pypi-attestations
+          python -m pip show pypi-attestations | head -2
+      - name: Hashes publicados en PyPI y atestaciones firmadas
+        run: python tools/verificar_procedencia.py --verificar descargas
+
+  guarddog:
+    needs: comprobar
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # Informe para revisar: GuardDog da falsos positivos en paquetes grandes.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+      - name: Instalar GuardDog
+        run: |
+          python -m pip install --disable-pip-version-check guarddog
+          guarddog --version || python -m pip show guarddog | head -2
+      - name: Escanear todos los paquetes de los locks
+        run: python tools/escanear_guarddog.py --salida guarddog
+      - name: Publicar informe
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: informe-guarddog
+          path: guarddog/
+          retention-days: 30
 
   generar:
     runs-on: ubuntu-latest
