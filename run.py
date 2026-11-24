@@ -212,7 +212,6 @@ def main() -> None:
 
     app.config["WORKSPACE"] = workspace
     app.config["PORT"] = port
-    app.config["SERVER_PID"] = os.getpid()
     setup_audit_log(os.path.join(workspace, "logs"))
 
     removed = prune_stale_sessions(workspace)

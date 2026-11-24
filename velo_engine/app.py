@@ -682,10 +682,7 @@ def status():
 
 @app.route("/api/shutdown", methods=["POST"])
 def shutdown():
-    import signal
     import threading
-
-    pid = app.config.get("SERVER_PID", os.getpid())
 
     log_audit("shutdown")
 
@@ -703,7 +700,14 @@ def shutdown():
                 exc_info=True,
             )
         time.sleep(0.5)
-        os.kill(pid, signal.SIGINT)
+        # Antes se enviaba SIGINT al propio proceso. En Windows os.kill(pid,
+        # SIGINT) equivale a TerminateProcess con código 2 (el instalador
+        # mostraba «Velo terminó con código 2») y, lanzado en segundo plano,
+        # el proceso hereda SIGINT ignorado y no se apagaba. Se sale de forma
+        # explícita tras limpiar y vaciar los logs.
+        logger.info("Velo apagado desde la interfaz")
+        logging.shutdown()
+        os._exit(0)
 
     threading.Thread(target=_shutdown_later, daemon=True).start()
     return jsonify({"success": True, "message": "Apagando Velo..."})

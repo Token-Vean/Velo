@@ -36,7 +36,8 @@ VENV_PY=".venv/bin/python"
 # Instalación verificada: cada paquete se descarga con la versión exacta de
 # locks/*.lock y pip rechaza cualquier fichero cuyo SHA-256 no coincida.
 # --only-binary impide compilar paquetes fuente (código arbitrario en setup.py).
-PIP_VERIFICADO=(-m pip install --require-hashes --only-binary=:all: --disable-pip-version-check)
+# --no-cache-dir: pip no deja copias de los paquetes fuera de esta carpeta.
+PIP_VERIFICADO=(-m pip install --require-hashes --only-binary=:all: --disable-pip-version-check --no-cache-dir)
 
 echo "Actualizando pip (versión y hash fijados)..."
 if ! "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/pip.lock; then
@@ -70,7 +71,8 @@ if ! "$VENV_PY" -c "import spacy; spacy.load('es_core_news_md')" >/dev/null 2>&1
   read -r -p "¿Desea instalar la detección de nombres? [S/n]: " INSTALL_NLP
   INSTALL_NLP="${INSTALL_NLP:-S}"
 
-  if [[ "${INSTALL_NLP^^}" == "S" ]]; then
+  # Sin ${VAR^^}: la bash 3.2 que trae macOS no lo admite.
+  if [[ "$INSTALL_NLP" == "S" || "$INSTALL_NLP" == "s" ]]; then
     echo
     echo "Instalando spaCy y el modelo es_core_news_md (verificados por hash)..."
     if "$VENV_PY" "${PIP_VERIFICADO[@]}" -r locks/requirements-nlp.lock; then
@@ -86,6 +88,9 @@ else
   echo "[OK] spaCy y modelo es_core_news_md ya instalados"
 fi
 
+echo
+echo "Velo solo escribe en esta carpeta y en su directorio de datos."
+echo "Para eliminarlo por completo: ./desinstalar.sh"
 echo
 echo "Iniciando Velo dentro de .venv ..."
 exec "$VENV_PY" run.py

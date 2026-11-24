@@ -53,7 +53,8 @@ if not exist ".venv\Scripts\python.exe" (
 set "VENV_PY=.venv\Scripts\python.exe"
 rem Instalacion verificada: version exacta de locks\*.lock y comprobacion del
 rem SHA-256 de cada fichero. --only-binary impide compilar paquetes fuente.
-set "PIP_VERIFICADO=-m pip install --require-hashes --only-binary=:all: --disable-pip-version-check --no-warn-script-location"
+rem --no-cache-dir: pip no deja copias de los paquetes fuera de esta carpeta.
+set "PIP_VERIFICADO=-m pip install --require-hashes --only-binary=:all: --disable-pip-version-check --no-cache-dir --no-warn-script-location"
 
 echo   Actualizando pip (version y hash fijados)...
 %VENV_PY% %PIP_VERIFICADO% -r locks\pip.lock
@@ -115,6 +116,9 @@ if %errorlevel% neq 0 (
 )
 
 echo.
+echo   Velo solo escribe en esta carpeta y en %LOCALAPPDATA%\Velo.
+echo   Para eliminarlo por completo: desinstalar.bat
+echo.
 echo   Iniciando Velo dentro de .venv ...
 echo.
 %VENV_PY% run.py
@@ -123,7 +127,7 @@ set "EXITCODE=%ERRORLEVEL%"
 echo.
 if not "%EXITCODE%"=="0" (
     echo   [AVISO] Velo termino con codigo %EXITCODE%.
-    echo   Revise los logs en %%LOCALAPPDATA%%\Velo\workspace\logs
+    echo   Revise los logs en %LOCALAPPDATA%\Velo\workspace\logs
 ) else (
     echo   Velo se ha detenido.
 )
