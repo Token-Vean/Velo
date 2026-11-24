@@ -1,6 +1,12 @@
 # Changelog
 
-## Sin publicar
+## 0.6.0
+
+- Las copias PDF con incidencias de cobertura requieren confirmación y llevan «BORRADOR» en el nombre. Un fallo del saneado impide entregar la copia nativa. Se retiran también los campos de formulario y sus valores predeterminados.
+- La revisión identifica las páginas PDF con imágenes sin analizar o sin texto localizado y las partes de Word con imágenes o revisiones.
+- La pantalla de exportación muestra confirmados, descartados y pendientes. La valoración del riesgo residual corresponde a la persona revisora.
+- Vista previa, portapapeles y guardado comparten el informe interno de la revisión y su identificador.
+- El instalador actualiza las dependencias lingüísticas de instalaciones anteriores. La matriz de integración comprueba también esta ruta.
 
 ### Auditoría de seguridad y privacidad (noviembre de 2026)
 

@@ -1,3 +1,5 @@
 """Velo - Detector de datos sensibles para archiveros."""
 
-__version__ = "0.5.0"
+from .constants import APP_VERSION as __version__
+
+__all__ = ["__version__"]

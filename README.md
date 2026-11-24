@@ -14,7 +14,7 @@ La herramienta **asiste** al proceso, pero **no sustituye la decisión profesion
 
 ## Estado del proyecto
 
-Versión actual del código: **0.5.0**.
+Versión actual del código: **0.6.0**.
 
 Esta revisión deja el proyecto mejor alineado en varias capas:
 
@@ -31,7 +31,7 @@ Esta revisión deja el proyecto mejor alineado en varias capas:
 - **Procesamiento local**: la aplicación escucha en `127.0.0.1`.
 - **Revisión humana obligatoria**: Velo detecta y propone; el archivero valida.
 - **No altera el máster original**: cuando redacta un PDF, genera una **copia derivada**.
-- **Dos salidas PDF**: permite generar una copia visual rasterizada o un expurgo nativo que elimina el contenido subyacente y conserva la capa de texto no afectada.
+- **Dos salidas PDF**: permite generar una copia visual rasterizada o una copia PDF testada que elimina el contenido subyacente y conserva la capa de texto no afectada.
 - **Trazabilidad**: el informe JSON conserva hallazgos, decisiones y metadatos.
 - **Persistencia mínima**: los temporales no visuales se eliminan y las sesiones visuales son efímeras.
 

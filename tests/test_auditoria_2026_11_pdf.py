@@ -6,6 +6,10 @@ allí aunque en un entorno sin PyMuPDF se omitan.
 
 from __future__ import annotations
 
+from collections import defaultdict
+import io
+import re
+
 import pytest
 
 pymupdf = pytest.importorskip("pymupdf")
@@ -100,3 +104,84 @@ def test_pagina_gigante_limita_la_escala(tmp_path):
         assert "enorme" in resultado[0].get_text()
     finally:
         resultado.close()
+
+
+def test_proyeccion_exige_cada_caracter_no_blanco():
+    pages = [{"words": [{"start": 0, "end": 10}, {"start": 0, "end": 10}]}]
+    finding = {"id": "f1", "position": {"start": 0, "end": 11}, "text": "ABCDEFGHIJK"}
+    assert visual_module.projection_report(pages, [finding])["partial"] == ["f1"]
+
+
+def test_copia_con_formulario_y_pagina_rotada(tmp_path):
+    path = tmp_path / "original.pdf"
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 90), "ALFA BETA")
+        for i in range(2):
+            widget = pymupdf.Widget()
+            widget.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT
+            widget.field_name = f"Campo{i}"
+            widget.field_value = "Valor de ejemplo"
+            widget.rect = pymupdf.Rect(60, 125 + 30*i, 260, 145 + 30*i)
+            annot = page.add_widget(widget)
+            doc.xref_set_key(annot.xref, "DV", "(Inicial)")
+        page.set_rotation(90)
+        doc.save(path)
+    text, _, error, meta = visual_module.read_pdf_for_visual_review(str(path), str(tmp_path), "s")
+    assert not error
+    start = text.index("ALFA")
+    found = [{"id": "f1", "status": "confirmed", "text": "ALFA", "position": {"start": start, "end": start+4}}]
+    output = tmp_path / "copia.pdf"
+    visual_module.export_native_redacted_pdf(str(tmp_path), found, str(output))
+    with pymupdf.open(output) as doc:
+        assert list(doc[0].widgets()) == []
+        assert doc.xref_get_key(doc.pdf_catalog(), "AcroForm")[0] == "null"
+        assert "ALFA" not in doc[0].get_text() and "BETA" in doc[0].get_text()
+    applied = visual_module.apply_redactions_to_original(str(tmp_path), "s", found)
+    from PIL import Image
+    word = next(w for w in meta["pages"][0]["words"] if w["text"] == "ALFA")
+    box = word["bbox"]
+    with Image.open(tmp_path / "assets" / applied["pages"][0]["image_url"].split("/")[-1]) as image:
+        assert image.getpixel((int((box[0]+box[2])/2), int((box[1]+box[3])/2))) == (0, 0, 0)
+
+
+def test_entrega_borrador_y_fallo_saneado(tmp_path, monkeypatch):
+    from velo_engine.app import app
+    from velo_engine import security
+    from PIL import Image
+
+    monkeypatch.setitem(app.config, "WORKSPACE", str(tmp_path))
+    monkeypatch.setattr(security._limiter, "_hits", defaultdict(list))
+    session_dir = tmp_path / "sessions" / "prueba"
+    session_dir.mkdir(parents=True)
+    with pymupdf.open() as doc:
+        page = doc.new_page()
+        page.insert_text((72, 90), "ALFA BETA")
+        img = io.BytesIO()
+        Image.new("RGB", (25, 25), "blue").save(img, "PNG")
+        page.insert_image(pymupdf.Rect(30, 140, 80, 190), stream=img.getvalue())
+        doc.save(session_dir / "original.pdf")
+    text, _, error, meta = visual_module.read_pdf_for_visual_review(str(session_dir / "original.pdf"), str(session_dir), "prueba")
+    assert not error and "imágenes" in meta["pages"][0]["coverage_note"]
+    start = text.index("ALFA")
+    payload = {"session_id": "prueba", "findings": [{"id": "f1", "status": "confirmed", "text": "ALFA",
+                "position": {"start": start, "end": start+4}}]}
+    with app.test_client() as client:
+        token = re.search(r'name="csrf-token" content="([^"]+)', client.get("/").get_data(as_text=True)).group(1)
+        headers = {"Host": "localhost:7780", "Origin": "http://localhost:7780", "X-CSRF-Token": token}
+        for mode in ("image", "native"):
+            request = {**payload, "redaction_mode": mode}
+            warn = client.post("/api/export/redacted-pdf", json=request, headers=headers)
+            assert warn.status_code == 409 and warn.json["draft_available"]
+            assert "Página 1" in warn.json["issues"][0]
+            draft = client.post("/api/export/redacted-pdf", json={**request, "draft": True}, headers=headers)
+            assert draft.status_code == 200 and "BORRADOR_" in draft.headers["Content-Disposition"]
+        url = "/api/session/prueba/applied-original-pdf"
+        assert client.get(url, headers=headers).status_code == 409
+        assert client.get(url + "?draft=1", headers=headers).headers["X-Velo-Estado"] == "borrador"
+
+        def unavailable(*args, **kwargs):
+            raise RuntimeError("Saneado no disponible")
+        monkeypatch.setattr(pymupdf.Document, "scrub", unavailable)
+        blocked = client.post("/api/export/redacted-pdf", json={**payload, "redaction_mode": "native", "draft": True}, headers=headers)
+        assert blocked.status_code == 400 and blocked.is_json
