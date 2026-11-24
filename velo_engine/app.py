@@ -26,7 +26,7 @@ from velo_engine.constants import (
 from velo_engine.detector import build_envelope, detect, spacy_status
 from velo_engine.file_guard import FileValidationError, validate_uploaded_file
 from velo_engine.reader import docx_review_notes, read_file, supported_extensions
-from velo_engine.security import init_security, log_audit, hash_text
+from velo_engine.security import hash_text, init_security, log_audit, para_log
 from velo_engine.visual import (
     apply_redactions_to_original,
     export_native_redacted_pdf,
@@ -325,7 +325,7 @@ def analyze_file():
         return jsonify({"error": "Nombre de fichero vacío."}), 400
     if not _allowed_file(file.filename):
         # Solo la extensión: el nombre original suele llevar nombres o DNI.
-        logger.warning("Formato rechazado: extensión %r", os.path.splitext(file.filename)[1].lower()[:16])
+        logger.warning("Formato rechazado: extensión %s", para_log(os.path.splitext(file.filename)[1].lower(), 16))
         return jsonify({"error": "Formato no permitido. Use TXT, DOCX o PDF."}), 400
 
     # La extensión sale del nombre original (ya validado por _allowed_file).

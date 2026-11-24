@@ -15,6 +15,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import secrets
 import time
 from collections import defaultdict
@@ -39,6 +40,21 @@ def _default_workspace() -> str:
     """Devuelve una ruta de workspace segura por defecto."""
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return os.path.join(base_dir, "workspace")
+
+
+_CONTROL = re.compile(r"[\x00-\x09\x0b-\x1f\x7f]")
+
+
+def para_log(valor, maximo: int = 200) -> str:
+    """Neutraliza un valor externo antes de escribirlo en un log.
+
+    Evita la falsificación de líneas del log (una ruta con «%0A» decodificado)
+    y las secuencias de escape que alteran la consola; además acota la
+    longitud. Los saltos de línea se escapan, no se eliminan, para que se vea
+    que venían en la petición.
+    """
+    texto = _CONTROL.sub("?", str(valor)[:maximo])
+    return texto.replace("\r", "\\r").replace("\n", "\\n")
 
 
 class _RateLimiter:
@@ -189,7 +205,7 @@ def _ensure_audit_handler() -> None:
 def log_audit(action: str, detail: str = "") -> None:
     _ensure_audit_handler()
     ip = request.remote_addr or "unknown"
-    _audit.info("ACTION=%s | IP=%s | %s", action, ip, detail)
+    _audit.info("ACTION=%s | IP=%s | %s", para_log(action), para_log(ip), para_log(detail, 500))
 
 
 _AUDIT_KEY: bytes | None = None
@@ -259,7 +275,10 @@ def init_security(app):
         ip = request.remote_addr or "unknown"
 
         if not _host_allowed(app):
-            logger.warning("Host no permitido: %r path=%s ip=%s", request.headers.get("Host"), request.path, ip)
+            logger.warning(
+                "Host no permitido: %s path=%s ip=%s",
+                para_log(request.headers.get("Host")), para_log(request.path), para_log(ip),
+            )
             return jsonify({"error": "Host no permitido. Acceda mediante http://127.0.0.1 o http://localhost."}), 421
 
         g.csrf_token = _generate_csrf_token()
@@ -275,7 +294,7 @@ def init_security(app):
         )
 
         if not is_session_asset and not _limiter.check(ip):
-            logger.warning("Rate limit: %s", ip)
+            logger.warning("Rate limit: %s", para_log(ip))
             return jsonify({"error": "Demasiadas peticiones."}), 429
 
         if request.path not in ("/api/status", "/static") and not request.path.startswith("/static"):
@@ -286,11 +305,11 @@ def init_security(app):
 
         if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
             if not _check_same_origin(app):
-                logger.warning("CSRF same-origin rechazado: path=%s ip=%s", request.path, ip)
+                logger.warning("CSRF same-origin rechazado: path=%s ip=%s", para_log(request.path), para_log(ip))
                 return jsonify({"error": "Origen no permitido."}), 403
 
             if not _check_csrf():
-                logger.warning("CSRF token inválido o ausente: path=%s ip=%s", request.path, ip)
+                logger.warning("CSRF token inválido o ausente: path=%s ip=%s", para_log(request.path), para_log(ip))
                 return jsonify({"error": "Token CSRF inválido o ausente."}), 403
 
     @app.after_request

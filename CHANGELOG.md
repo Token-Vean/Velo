@@ -86,6 +86,17 @@
 - **install.sh en macOS**: usaba `${VAR^^}`, que la bash 3.2 de macOS no
   admite; la pregunta de instalar spaCy fallaba.
 
+- **CodeQL**: nuevo workflow (Python, JavaScript y Actions, consultas
+  `security-extended`) en cada PR, en `main` y semanal. El análisis por
+  defecto no se ejecutaba desde abril y mantenía abiertas 7 alertas sobre
+  código ya corregido (path injection, exposición de trazas, permisos del
+  workflow), que no aparecen en el código actual.
+- **Inyección en logs**: las rutas, la cabecera Host, la IP y los datos de
+  auditoría se escriben en los logs con `para_log()`, que escapa saltos de
+  línea y elimina caracteres de control. Antes una petición con `%0A` en la
+  ruta, incluso rechazada, podía falsificar líneas del log.
+- **Procedencia**: reintentos ante cortes puntuales de PyPI.
+
 ### Anteriores
 
 - **Privacidad — curso 2026 (#19)**: detección de DNI con guion o puntos, NIE

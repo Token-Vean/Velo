@@ -215,3 +215,26 @@ def test_same_site_sin_origin_se_rechaza(client):
         content_type="application/json",
     )
     assert respuesta.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Inyección en logs (CodeQL py/log-injection)
+# ---------------------------------------------------------------------------
+
+def test_para_log_neutraliza_saltos_y_controles():
+    valor = security.para_log("/x\n2026-11-24 | INFO | linea falsa\r\x1b[31m")
+    assert "\n" not in valor and "\r" not in valor and "\x1b" not in valor
+    assert "\\n" in valor
+
+
+def test_ruta_con_salto_de_linea_no_falsifica_el_log(client, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        respuesta = client.post(
+            "/api/x%0A2026-11-24 00:00:00 | INFO | velo | linea falsa",
+            headers={"Host": "localhost:7780", "Origin": "http://evil.example"},
+        )
+    assert respuesta.status_code == 403
+    registros = [r.getMessage() for r in caplog.records if "same-origin" in r.getMessage()]
+    assert registros and all("\n" not in m for m in registros)
