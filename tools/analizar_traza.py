@@ -30,7 +30,8 @@ RESULTADO_OK = re.compile(r"\)\s+=\s+(\d+)")
 INET = re.compile(r'sa_family=AF_INET6?,\s*sin6?_port=htons\((\d+)\),\s*(?:sin6_flowinfo=[^,]+,\s*)?'
                   r'(?:sin_addr=inet_addr\("([^"]+)"\)|inet_pton\(AF_INET6,\s*"([^"]+)"[^)]*\))')
 LLAMADA = re.compile(r"^(\d+)\s+(\w+)\((.*)$")
-RUTA_FD = re.compile(r'^(?:AT_FDCWD|(\d+)<([^>]*)>),\s*"([^"]*)"')
+# Con -y, strace decora los descriptores: «AT_FDCWD</cwd>» o «3</dir>».
+RUTA_FD = re.compile(r'^(?:AT_FDCWD(?:<([^>]*)>)?|\d+<([^>]*)>),\s*"([^"]*)"')
 RUTA_SIMPLE = re.compile(r'^"([^"]*)"')
 TEMPORALES = tuple(
     str(Path(p).resolve()) for p in {tempfile.gettempdir(), "/tmp", "/var/tmp", "/dev/shm"} if os.path.exists(p)
@@ -61,12 +62,12 @@ def _rutas_de(llamada: str, argumentos: str, cwd: str) -> list[str]:
     elif llamada in ("openat", "mkdirat", "unlinkat", "openat2"):
         coincidencia = RUTA_FD.match(argumentos)
         if coincidencia:
-            rutas.append(_resolver(coincidencia[2], coincidencia[3], cwd))
+            rutas.append(_resolver(coincidencia[1] or coincidencia[2], coincidencia[3], cwd))
     elif llamada in ("renameat", "renameat2"):
         # renameat(dirfd, "origen", dirfd2, "destino"): interesa el destino
-        trozos = re.findall(r'(?:AT_FDCWD|\d+<([^>]*)>),\s*"([^"]*)"', argumentos)
+        trozos = re.findall(r'(?:AT_FDCWD(?:<([^>]*)>)?|\d+<([^>]*)>),\s*"([^"]*)"', argumentos)
         if len(trozos) >= 2:
-            rutas.append(_resolver(trozos[1][0] or None, trozos[1][1], cwd))
+            rutas.append(_resolver(trozos[1][0] or trozos[1][1] or None, trozos[1][2], cwd))
     return rutas
 
 
@@ -84,6 +85,8 @@ def main() -> int:
     escuchas_externas: list[str] = []
     unix: set[str] = set()
     fuera: dict[str, str] = {}
+    ilegibles: list[str] = []
+    escrituras_evaluadas = 0
     temporales_creados: set[str] = set()
 
     with open(opciones.traza, encoding="utf-8", errors="replace") as handle:
@@ -126,7 +129,13 @@ def main() -> int:
         ) or llamada in ("mkdir", "mkdirat", "rename", "renameat", "renameat2", "unlink", "unlinkat", "rmdir")
         if not es_escritura or not RESULTADO_OK.search(argumentos):
             continue
-        for ruta in _rutas_de(llamada, argumentos, opciones.cwd):
+        rutas = _rutas_de(llamada, argumentos, opciones.cwd)
+        if not rutas:
+            # Nunca ignorar en silencio una escritura que no se sabe leer.
+            ilegibles.append(linea.strip()[:200])
+            continue
+        escrituras_evaluadas += 1
+        for ruta in rutas:
             if _dentro(ruta, permitidas) or ruta.startswith(ESPECIALES):
                 continue
             if llamada in ("mkdir", "mkdirat") and any(r.startswith(ruta.rstrip("/") + "/") for r in permitidas):
@@ -157,6 +166,12 @@ def main() -> int:
         if unix:
             print(f"Sockets locales del sistema (informativo): {sorted(unix)}")
 
+    print(f"Escrituras evaluadas: {escrituras_evaluadas}")
+    if ilegibles:
+        print(f"  [X] Llamadas de escritura que no se pudieron interpretar: {len(ilegibles)}")
+        for texto in ilegibles[:10]:
+            print(f"      {texto}")
+        fallos += len(ilegibles)
     print(f"Escrituras fuera de {permitidas} y temporales: {len(fuera)}")
     for ruta, llamada in sorted(fuera.items())[:100]:
         print(f"  [X] {llamada}: {ruta}")

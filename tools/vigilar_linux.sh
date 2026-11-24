@@ -29,6 +29,28 @@ if [[ -e .venv || -e "$DATOS" ]]; then
   exit 1
 fi
 
+echo "::group::0. Control negativo del analizador"
+# Un proceso que intenta salir a internet y escribe fuera de la carpeta: el
+# analizador DEBE detectarlo. Si no, sus «OK» posteriores no valdrían nada.
+"${STRACE[@]}" -o "$TRAZAS/control.txt" python3 -c '
+import pathlib, socket
+try:
+    socket.create_connection(("1.1.1.1", 443), 3).close()
+except OSError:
+    pass
+pathlib.Path.home().joinpath(".velo-control-negativo").write_text("x")
+'
+rm -f "$HOME/.velo-control-negativo"
+if python3 tools/analizar_traza.py "$TRAZAS/control.txt" --permitida "$CARPETA" > "$TRAZAS/control-salida.txt"; then
+  cat "$TRAZAS/control-salida.txt"
+  echo "[ERROR] El analizador no detectó la conexión ni la escritura del control negativo"
+  exit 1
+fi
+grep -q "1.1.1.1:443" "$TRAZAS/control-salida.txt" && grep -q ".velo-control-negativo" "$TRAZAS/control-salida.txt" \
+  || { cat "$TRAZAS/control-salida.txt"; echo "[ERROR] Control negativo incompleto"; exit 1; }
+echo "[OK] El analizador detecta conexiones externas y escrituras fuera de la carpeta"
+echo "::endgroup::"
+
 echo "::group::1. Instalación vigilada"
 "${STRACE[@]}" -o "$TRAZAS/instalacion.txt" bash -c "
   set -e
