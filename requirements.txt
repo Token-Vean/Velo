@@ -10,7 +10,7 @@ pypdf==7.1.1
 
 # Dependencias transitivas con mínimos de seguridad. No se fijan a una versión
 # exacta para que pip resuelva la última corregida, pero nunca por debajo de:
-#   Werkzeug >= 3.1.6  CVE-2026-21860 y CVE-2026-27199 (safe_join en Windows)
+#   Werkzeug >= 3.1.9  CVE-2026-21860 y CVE-2026-27199 (safe_join en Windows)
 #   Jinja2   >= 3.1.6  CVE-2025-27516 (sandbox |attr)
 #   lxml     >= 6.1.0  CVE-2026-41066 (XXE en iterparse/ETCompatXMLParser)
 Werkzeug>=3.1.6
